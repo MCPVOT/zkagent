@@ -32,7 +32,14 @@ jobs:
     # A fork must never publish this repository's board.
     if: github.event_name != 'schedule' || github.repository == 'MCPVOT/zkagent'
     permissions:
+      # write: push the rendered board to the `leaderboard` branch.
       contents: write
+      # read: `gh pr list` goes through GraphQL's repository.pullRequests, which
+      # is not covered by `contents`. Without this the generate step dies with
+      # "Resource not accessible by integration".
+      pull-requests: read
+      # read: issue counts (context only, never scored).
+      issues: read
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
