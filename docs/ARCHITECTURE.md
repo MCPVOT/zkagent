@@ -86,10 +86,22 @@ Two further substrate facts that shaped the code:
 
 | Substrate | Why not (for v0) |
 |---|---|
-| **SP1 / RISC Zero** | A zkVM proves *arbitrary computation*, which sounds ideal until you price it: proving a general program on 2 vCPU / 3 GB is minutes-to-hours, and the statement here ("8 bounded actions, one sum, one membership") is small and fixed. A zkVM is the right answer when the thing being proved is an interpreter — ours is not. Revisit for v2 if we must prove an actual model forward-pass. |
-| **halo2** | Excellent for custom circuits with lookups and it has real EVM verifier paths, but the ecosystem split (zcash/halo2 vs axiom's fork vs PSE) is a real maintenance hazard, and Groth16's 128-byte proof / 2 ms verify is better for the on-chain story we want next. |
-| **Plonky3** | Transparent setup (no ceremony) is a genuine advantage and it is very much alive. But its API is a moving target at the toolkit layer and the EVM verification story is weaker than Groth16's. This is the strongest v2 candidate if the ceremony becomes the blocker. |
+| **SP1 / RISC Zero** | A zkVM proves *arbitrary computation*, which sounds ideal until you price it: proving a general program on 2 vCPU / 3 GB is minutes-to-hours, and the statement here ("8 bounded actions, one sum, one membership") is small and fixed. **Measured constraint: no zkVM can prove on the droplet at all** — SP1 needs ~16 GB (64 GB for a PLONK wrap) and RISC Zero recommends 16 GB, against 3 GB total. A zkVM is the right answer when the thing proved is an interpreter; ours is not. Revisit for v2 if we must prove an actual model forward-pass. |
+| **halo2** | Excellent for custom circuits with lookups and it has the only *audited, maintained* PLONKish EVM verifier path — but the ecosystem is fractured and half-dead: `privacy-scaling-explorations` renamed to `privacy-ethereum` and archived, taking halo2 (archived 2026-08-17), halo2curves and snark-verifier with it. The live fork is Axiom's, a 16-star dependency. That is a maintenance hazard for a protocol meant to outlive its authors. |
+| **Plonky3** | Transparent setup (no ceremony) is a genuine advantage and it is the most active line — Plonky2 is archived with a deprecation notice pointing here. But `p3-*` is at `0.9.0-rc.2` (no stable API), there is no in-tree recursion, and the EVM verification story is weaker than Groth16's. **The strongest v2 candidate** if the trusted setup becomes the blocker. |
 | **Noir / Circom** | A DSL would mean shipping a compiler toolchain and a proving backend; we would own the circuit but not the stack. Not worth it for eight constraints' worth of logic. |
+
+Two further audit facts that bear on later phases, recorded so they are not
+rediscovered:
+
+* **`succinctlabs/sp1-contracts` — the actual on-chain SP1 verifier — has no
+  LICENCE file at all.** That is a blocking question for any open-source
+  protocol planning to depend on it, and it is one more reason the on-chain path
+  here is "write a Groth16 verifier against our own vk" rather than "vendor
+  someone else's verifier".
+* **Proving is now a priced utility**: Boundless reports ~400T cycles/day at
+  $0.04 per billion cycles (Jan 2026). Worth pricing against local proving
+  before assuming a hosted prover is needed.
 
 ### 2.4 The eve-of-build consensus from the repo audit
 
@@ -282,12 +294,20 @@ Measured on this implementation, not estimated:
 |---|---|---|
 | constraints | **3265** | `constraint_count_is_sane` test (`--nocapture`) |
 | public inputs | **14** | asserted by the same test (`num_instance_variables == 15`, incl. the constant-one slot) |
-| proof size | **128 B** | `proof.json` → `len(proof)` after decode |
+| proof | **128 B** (2 170 B JSON artifact) | `proof.json` |
 | verifying key | **712 B** | `keys/vk.bin` |
 | proving key | **649 KB** | `keys/pk.bin` |
+| binary | 2.1 MB | release build |
 | end-to-end | **ACCEPT** | real CLI run: setup → policy → prove → verify |
-| prove (debug profile) | 1.28 s | Wall clock, `target/debug` binary |
-| verify (debug profile) | 46 ms | Wall clock, `target/debug` binary |
+| setup (release, parallel) | 0.19 s | wall clock |
+| prove (release, parallel) | **0.43–0.64 s** | 5 runs |
+| prove (release, serial) | 1.02–1.16 s | 3 runs, `parallel` feature off |
+| verify (release) | **0.048–0.091 s** | 5 runs, incl. ~40 ms process startup |
+
+Rayon (`ark-groth16/parallel`) is worth ~2× on proving and nothing on
+verification, so it is enabled — with the note that a memory-constrained box can
+build serial instead. Raw runs and the stale-binary trap that produced a 28 936 B
+vk once: `docs/MEASUREMENTS.md`.
 
 An independent implementation probe of the same statement shape
 (`05-rust-implementation-design.md`) measured a smaller circuit (2162

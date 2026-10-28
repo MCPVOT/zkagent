@@ -5,3 +5,5 @@
 {"action": "setup/prove/artifact format", "metric": "proof=128B vk=712B pk=649KB", "note": "single-party setup, documented", "phase": "prover", "result": "pass", "ts": "2026-10-28T04:45:08+00:00"}
 {"action": "5-step verify + 13 negative controls", "metric": "39 tests green", "note": "tampered/wrong-key/foreign-vk/expired/future/format all reject", "phase": "verifier", "result": "pass", "ts": "2026-10-28T04:45:08+00:00"}
 {"action": "ARCHITECTURE + README + 5 cited research reports", "metric": "28KB architecture", "note": "includes the shipped-then-removed soundness bug", "phase": "docs", "result": "pass", "ts": "2026-10-28T04:45:09+00:00"}
+{"action": "enable ark-groth16/parallel (rayon)", "metric": "prove 1.02-1.16s -> 0.43-0.64s", "note": "~2x on proving, verify unchanged; serial build documented for memory-constrained boxes", "phase": "prover", "result": "pass", "ts": "2026-10-28T16:06:22+00:00"}
+{"action": "constraint_count_is_sane guard", "metric": "3265 constraints / 14 inputs", "note": "asserts arity so the per-bit-public-input bug cannot return silently", "phase": "circuit", "result": "pass", "ts": "2026-10-28T16:06:22+00:00"}

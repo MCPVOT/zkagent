@@ -43,7 +43,8 @@ ACCEPT
 inputs: 14 | format: 1 | proof bytes: 128
 pk.bin 648816   vk.bin 712   proof.json 2170
 ```
-Timings in the debug profile: prove 1.28 s, verify 46 ms (wall clock).
+Release, with `parallel`: prove 0.43–0.64 s, verify 0.048–0.091 s (see the
+timings table below for the serial comparison).
 
 Negative controls, all exercised through the real binary:
 
@@ -53,9 +54,49 @@ Negative controls, all exercised through the real binary:
 | prove with amount 400 (cap 300) | `error: policy rejected: action amount 400 exceeds per-action cap 300` | 2 |
 | prove with target 4 (not in {3,7,9}) | `error: policy rejected: target 4 is not in the allow-list` | 2 |
 
-## Known measurement gap
+## Timings, serial vs parallel
 
-Release-profile timings for THIS circuit (3265 constraints) are not yet recorded.
-Do not quote the probe's 161 ms prove figure as this circuit's number — the probe
-measured 2162 constraints. Run `cargo build --release` and re-time before
-publishing.
+`ark-groth16`'s `parallel` feature (rayon) is enabled in
+`crates/zkagent-proofs/Cargo.toml`. Same artifacts, same machine:
+
+| Run | Serial prove | Parallel prove |
+|---|---|---|
+| 1 | 1.024 s | 0.672 s |
+| 2 | 1.017 s | 0.430 s |
+| 3 | 1.164 s | 0.471 s |
+| 4 | — | 0.599 s |
+| 5 | — | 0.638 s |
+
+Proving: **1.02–1.16 s serial → 0.43–0.64 s parallel** (~2×). Verification is one
+pairing check and is unaffected: **0.048–0.091 s** including ~40 ms of process
+startup. Setup with the parallel build: **0.187 s** (0.565 s on the earlier
+serial build; both are dominated by the same NTT work).
+
+Keeping `parallel` on is a deliberate trade: rayon in the dependency tree and a
+little peak memory for ~2× proving. A memory-constrained box can build serial —
+on the droplet, memory is the constraint (3 GB total), not CPU.
+
+## The one measurement this project got wrong first
+
+`keys/vk.bin` was **28 936 B** and every CLI `verify` said
+`MalformedVerifyingKey`, while the unit test passed. Two causes stacked:
+
+1. **The binary under test was stale.** `cargo test` builds test harnesses, not
+   necessarily the standalone `zkagent.exe`, so the test passed against the new
+   circuit while the CLI still ran the old one. When a test and the CLI disagree,
+   check the binary — do not start doubting the test.
+2. **The old circuit allocated public inputs with `UInt::new_input`,** which
+   allocates **one public input per bit**: 896 of them. `verify_proof` then
+   expected a 896-element vector and got the 14 the verifier actually has.
+
+A vk's size is a fingerprint of its public-input count: **712 B = 14 inputs**,
+28 936 B = 896. `constraint_count_is_sane` now asserts the arity, so the number
+cannot drift quietly again.
+
+## What is still not measured
+
+* Peak RSS for **this** circuit under the parallel feature. (29 MB was measured
+  serial on the droplet, for the smaller probe circuit.)
+* Proving on the droplet for this circuit: the release binary here is a Windows
+  PE, so the droplet needs its own `cargo build --release` (~3 min on 2 vCPU).
+* Gas for an on-chain verifier: none exists yet.
