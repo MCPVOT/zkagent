@@ -135,6 +135,45 @@ class PacificDay(unittest.TestCase):
         self.assertEqual(summer.strftime("%Y-%m-%dT%H:%M:%SZ"), "2026-07-15T07:00:00Z")
         self.assertEqual(winter.strftime("%Y-%m-%dT%H:%M:%SZ"), "2026-01-15T08:00:00Z")
 
+    def test_the_midnight_rule_works_without_a_tz_database(self):
+        # Windows Python ships no tzdata; this is the code path CI hits there.
+        # The result must be identical to the ZoneInfo path.
+        global_saved = g.PACIFIC
+        try:
+            g.PACIFIC = g._UsPacific()
+            summer = g.pacific_midnight(datetime(2026, 7, 15, 20, 0, tzinfo=timezone.utc))
+            winter = g.pacific_midnight(datetime(2026, 1, 15, 20, 0, tzinfo=timezone.utc))
+            self.assertEqual(summer.strftime("%Y-%m-%dT%H:%M:%SZ"), "2026-07-15T07:00:00Z")
+            self.assertEqual(winter.strftime("%Y-%m-%dT%H:%M:%SZ"), "2026-01-15T08:00:00Z")
+        finally:
+            g.PACIFIC = global_saved
+
+    def test_the_fallback_agrees_with_the_real_tz_database(self):
+        if g.ZoneInfo is None:
+            self.skipTest("no zoneinfo module")
+        try:
+            real = g.ZoneInfo("America/Los_Angeles")
+        except Exception:
+            self.skipTest("no tz database installed on this host")
+
+        fallback = g._UsPacific()
+        # The two DST transitions plus ordinary winter and summer days.
+        probes = [
+            "2026-01-15T12:00:00",
+            "2026-07-15T12:00:00",
+            "2026-03-08T01:30:00",  # before the spring-forward
+            "2026-03-08T03:30:00",  # after it
+            "2026-11-01T01:30:00",  # before the fall-back
+            "2026-11-01T03:30:00",  # after it
+        ]
+        for iso in probes:
+            naive = datetime.fromisoformat(iso)
+            self.assertEqual(
+                naive.replace(tzinfo=fallback).utcoffset(),
+                naive.replace(tzinfo=real).utcoffset(),
+                f"fallback disagrees with tzdata at {iso}",
+            )
+
     def test_today_counts_are_inclusive_of_the_boundary(self):
         cutoff = g.pacific_midnight(datetime(2026, 7, 15, 20, 0, tzinfo=timezone.utc))
         dates = ["2026-07-15T07:00:00Z", "2026-07-15T06:59:59Z"]

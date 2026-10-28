@@ -48,7 +48,7 @@ import json
 import re
 import subprocess
 import sys
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time as dtime, timedelta, timezone, tzinfo
 from pathlib import Path
 
 try:
@@ -80,9 +80,59 @@ REFS = re.compile(
 # 123+login@users.noreply.github.com  ->  login
 NOREPLY = re.compile(r"^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$", re.I)
 
-PACIFIC = ZoneInfo("America/Los_Angeles") if ZoneInfo else timezone(timedelta(hours=-7))
+PACIFIC = None  # set below, after the fallback class
 SINCE_CAPTION = "new since 12:00 AM Pacific (America/Los_Angeles)"
 RANKED_BY = "merged_prs"
+
+
+class _UsPacific(tzinfo):
+    """US Pacific using the post-2007 DST rule.
+
+    A fallback for hosts with no time-zone database. Windows Python does not
+    ship one, so `ZoneInfo("America/Los_Angeles")` raises there and a leaderboard
+    that only worked on Linux would fail on half of CI.
+
+    The rule: DST runs from the second Sunday of March at 02:00 local to the first
+    Sunday of November at 02:00 local. `test_generate.py` checks this against the
+    real tz database wherever one is installed, so the fallback cannot drift
+    silently.
+    """
+
+    @staticmethod
+    def _nth_sunday(year: int, month: int, n: int) -> date:
+        first = date(year, month, 1)
+        first_sunday = 1 + (6 - first.weekday()) % 7  # Monday=0 … Sunday=6
+        return date(year, month, first_sunday + 7 * (n - 1))
+
+    def _is_dst(self, dt: datetime) -> bool:
+        naive = dt.replace(tzinfo=None)
+        start = datetime.combine(self._nth_sunday(naive.year, 3, 2), dtime(2, 0))
+        end = datetime.combine(self._nth_sunday(naive.year, 11, 1), dtime(2, 0))
+        return start <= naive < end
+
+    def utcoffset(self, dt):  # noqa: D102 - tzinfo protocol
+        if dt is None:
+            return timedelta(hours=-8)
+        return timedelta(hours=-7) if self._is_dst(dt) else timedelta(hours=-8)
+
+    def dst(self, dt):  # noqa: D102 - tzinfo protocol
+        return timedelta(hours=1) if dt is not None and self._is_dst(dt) else timedelta(0)
+
+    def tzname(self, dt):  # noqa: D102 - tzinfo protocol
+        return "PDT" if dt is not None and self._is_dst(dt) else "PST"
+
+
+def pacific():
+    """America/Los_Angeles if the host has a tz database, else the local rule."""
+    if ZoneInfo is not None:
+        try:
+            return ZoneInfo("America/Los_Angeles")
+        except Exception:  # ZoneInfoNotFoundError, and anything else exotic
+            pass
+    return _UsPacific()
+
+
+PACIFIC = pacific()
 
 
 # --- Pure helpers (unit-tested) -------------------------------------------------
