@@ -130,7 +130,11 @@ mod tests {
         let auth = Authority::from_seed(42);
         let p = policy();
         let sig = auth.sign_policy(&p);
-        assert!(verify_policy_signature(auth.public_key().as_bytes(), &p, &sig));
+        assert!(verify_policy_signature(
+            auth.public_key().as_bytes(),
+            &p,
+            &sig
+        ));
     }
 
     #[test]
@@ -180,7 +184,9 @@ mod tests {
         assert!(!verify_policy_signature(
             auth.public_key().as_bytes(),
             &p,
-            &SignatureBytes { bytes: vec![0u8; 3] }
+            &SignatureBytes {
+                bytes: vec![0u8; 3]
+            }
         ));
     }
 

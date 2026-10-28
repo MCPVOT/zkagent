@@ -46,7 +46,6 @@
 //! * Target equality is field equality, which is integer equality here because
 //!   every value is far below the modulus.
 
-use ark_ff::PrimeField;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::boolean::Boolean;
 use ark_r1cs_std::cmp::CmpGadget;
@@ -97,6 +96,8 @@ pub struct ReceiptPublic {
     pub action_count: u64,
     /// Completion timestamp.
     pub completed_at: u64,
+    /// Unique execution id (anti-replay). Must be non-zero.
+    pub execution_id: u64,
 }
 
 /// Private witness for one action.
@@ -153,6 +154,15 @@ impl ConstraintSynthesizer<CircuitField> for PolicyConformanceCircuit {
             allowed.push(pub_u64(&cs, v)?);
         }
 
+        // The execution id is allocated LAST, after the allow-list, because the
+        // public-input vector is ordered by ALLOCATION here, not by semantics.
+        // `public_inputs()` appends it last to match. Allocating it earlier (a
+        // natural place, next to the other receipt scalars) permutes the
+        // vector against what the verifier computes, and the only symptom is
+        // `InvalidProof` on an honest witness — with every input individually
+        // correct. Keep these two orders in lockstep.
+        let execution_id = pub_u64(&cs, self.receipt.execution_id)?;
+
         // ------------------------------------------------------------------
         // Private actions.
         // ------------------------------------------------------------------
@@ -169,18 +179,24 @@ impl ConstraintSynthesizer<CircuitField> for PolicyConformanceCircuit {
         // 1. Per-action cap.
         // ------------------------------------------------------------------
         for (_, amount, _) in &action_vars {
-            amount.is_le(&max_per_action)?.enforce_equal(&Boolean::TRUE)?;
+            amount
+                .is_le(&max_per_action)?
+                .enforce_equal(&Boolean::TRUE)?;
         }
 
         // ------------------------------------------------------------------
         // 2. Total cap.
         // ------------------------------------------------------------------
-        receipt_total.is_le(&max_amount)?.enforce_equal(&Boolean::TRUE)?;
+        receipt_total
+            .is_le(&max_amount)?
+            .enforce_equal(&Boolean::TRUE)?;
 
         // ------------------------------------------------------------------
         // 3. Coherent policy.
         // ------------------------------------------------------------------
-        max_per_action.is_le(&max_amount)?.enforce_equal(&Boolean::TRUE)?;
+        max_per_action
+            .is_le(&max_amount)?
+            .enforce_equal(&Boolean::TRUE)?;
 
         // ------------------------------------------------------------------
         // 4. Allow-list membership.
@@ -227,10 +243,23 @@ impl ConstraintSynthesizer<CircuitField> for PolicyConformanceCircuit {
         // ------------------------------------------------------------------
         // 7. Freshness: completed_at < expires_at.
         // ------------------------------------------------------------------
-        completed_at.is_lt(&expires_at)?.enforce_equal(&Boolean::TRUE)?;
+        completed_at
+            .is_lt(&expires_at)?
+            .enforce_equal(&Boolean::TRUE)?;
 
         // ------------------------------------------------------------------
-        // 8. Trace digests are real witness values.
+        // 8. The execution id is present.
+        // ------------------------------------------------------------------
+        // The circuit cannot detect replay (freshness is stateful), but it CAN
+        // refuse the reserved "unset" value. Without this, a receipt with id 0
+        // would silently disable a verifier's anti-replay set, because every
+        // zero-id receipt would look like the same (already-seen) execution.
+        execution_id
+            .is_eq(&U64Var::constant(0))?
+            .enforce_equal(&Boolean::FALSE)?;
+
+        // ------------------------------------------------------------------
+        // 9. Trace digests are real witness values.
         // ------------------------------------------------------------------
         // Not compared to anything public in v1. Decomposing them keeps the
         // compiler from eliding them and turns the v2 upgrade (binding a
@@ -251,10 +280,7 @@ impl ConstraintSynthesizer<CircuitField> for PolicyConformanceCircuit {
 /// the 64 bits must equal the public field element, so a public value `>= 2^64`
 /// has no satisfying witness. Using `UInt::new_input` instead would allocate 64
 /// public inputs per value and break the verifier's input vector.
-fn pub_u64(
-    cs: &ConstraintSystemRef<CircuitField>,
-    value: u64,
-) -> Result<U64Var, SynthesisError> {
+fn pub_u64(cs: &ConstraintSystemRef<CircuitField>, value: u64) -> Result<U64Var, SynthesisError> {
     let public = FpVar::<CircuitField>::new_input(cs.clone(), || Ok(CircuitField::from(value)))?;
     let uint = U64Var::new_witness(cs.clone(), || Ok(value))?;
     let bits = uint.to_bits_le()?;
@@ -318,6 +344,7 @@ pub fn build_circuit(
             total_amount: receipt.total_amount,
             action_count: receipt.action_count as u64,
             completed_at: receipt.completed_at,
+            execution_id: receipt.execution_id,
         },
         actions: padded,
     }
@@ -331,7 +358,7 @@ pub fn build_circuit(
 /// vector makes a valid proof fail — or, worse, makes a proof about different
 /// values pass.
 pub fn public_inputs(policy: &Policy, receipt: &Receipt) -> Vec<CircuitField> {
-    let mut out = Vec::with_capacity(6 + MAX_POLICY_TARGETS);
+    let mut out = Vec::with_capacity(7 + MAX_POLICY_TARGETS);
     out.push(CircuitField::from(policy.max_amount));
     out.push(CircuitField::from(policy.max_per_action));
     out.push(CircuitField::from(policy.expires_at));
@@ -347,6 +374,9 @@ pub fn public_inputs(policy: &Policy, receipt: &Receipt) -> Vec<CircuitField> {
             .unwrap_or(0);
         out.push(CircuitField::from(v));
     }
+    // Anti-replay id last, so the earlier positions keep their meaning for
+    // anyone reading an older artifact's public inputs.
+    out.push(CircuitField::from(receipt.execution_id));
     out
 }
 
@@ -380,6 +410,7 @@ mod tests {
             action_count: 2,
             completed_at: 1_500,
             chain_id: 1,
+            execution_id: 1,
         }
     }
 
@@ -424,6 +455,7 @@ mod tests {
             action_count: 3,
             completed_at: 1_500,
             chain_id: 1,
+            execution_id: 1,
         };
         let actions = vec![
             Action {
@@ -471,12 +503,9 @@ mod tests {
             action_count: 2,
             completed_at: 2_000, // == expires_at; must be strictly before
             chain_id: 1,
+            execution_id: 1,
         };
-        assert!(!is_satisfied(
-            &sample_policy(),
-            &receipt,
-            &sample_actions()
-        ));
+        assert!(!is_satisfied(&sample_policy(), &receipt, &sample_actions()));
     }
 
     #[test]
@@ -486,12 +515,9 @@ mod tests {
             action_count: 3,
             completed_at: 1_500,
             chain_id: 1,
+            execution_id: 1,
         };
-        assert!(!is_satisfied(
-            &sample_policy(),
-            &receipt,
-            &sample_actions()
-        ));
+        assert!(!is_satisfied(&sample_policy(), &receipt, &sample_actions()));
     }
 
     #[test]
@@ -501,18 +527,86 @@ mod tests {
             action_count: 2,
             completed_at: 1_500,
             chain_id: 1,
+            execution_id: 1,
         };
-        assert!(!is_satisfied(
-            &sample_policy(),
-            &receipt,
-            &sample_actions()
-        ));
+        assert!(!is_satisfied(&sample_policy(), &receipt, &sample_actions()));
+    }
+
+    #[test]
+    fn public_input_order_matches_the_allocation_order() {
+        // THE guard against a permuted public-input vector. The circuit's public
+        // inputs are ordered by the order `new_input` is called, while the
+        // verifier builds its vector in `public_inputs()`. When those two
+        // disagree, every individual input is correct and the proof still fails
+        // with `InvalidProof` — which reads like a broken prover, not a
+        // mis-ordered vector. This asserts they are the same list, element by
+        // element, so the mistake surfaces at its real cause.
+        let policy = sample_policy();
+        let receipt = sample_receipt();
+        let cs = ConstraintSystem::<CircuitField>::new_ref();
+        build_circuit(&policy, &receipt, &sample_actions())
+            .generate_constraints(cs.clone())
+            .unwrap();
+
+        let assigned = cs
+            .borrow()
+            .expect("constraint system outlives the borrow")
+            .instance_assignment
+            .clone();
+        // Slot 0 is the constant one.
+        let expected = public_inputs(&policy, &receipt);
+        assert_eq!(assigned.len(), expected.len() + 1);
+        assert_eq!(&assigned[1..], expected.as_slice());
+    }
+
+    #[test]
+    fn circuit_shape_is_data_independent() {
+        // Groth16 is circuit-specific: the constraint system produced at SETUP
+        // must be identical to the one used to PROVE. If any constraint is
+        // added conditionally on witness values, a setup run with a different
+        // policy produces a key pair whose proofs never verify — and the only
+        // symptom is `InvalidProof` on a perfectly honest witness.
+        //
+        // This test pins that invariant against the exact dummy instance
+        // `prover::setup` uses.
+        fn shape(p: &Policy, r: &Receipt, a: &[Action]) -> (usize, usize) {
+            let cs = ConstraintSystem::<CircuitField>::new_ref();
+            build_circuit(p, r, a)
+                .generate_constraints(cs.clone())
+                .unwrap();
+            (cs.num_constraints(), cs.num_instance_variables())
+        }
+
+        let setup_policy = Policy::new(1, 1, 1, 1, vec![0]).unwrap();
+        let setup_receipt = Receipt {
+            total_amount: 0,
+            action_count: 0,
+            completed_at: 0,
+            chain_id: 1,
+            execution_id: 1,
+        };
+
+        let setup_shape = shape(&setup_policy, &setup_receipt, &[]);
+        let real_shape = shape(&sample_policy(), &sample_receipt(), &sample_actions());
+        assert_eq!(
+            setup_shape, real_shape,
+            "setup and proving circuits differ — setup shape {setup_shape:?}, proving shape {real_shape:?}"
+        );
+    }
+
+    #[test]
+    fn zero_execution_id_fails() {
+        // The circuit refuses the reserved id 0 even though the constraint
+        // system cannot detect an actual replay.
+        let mut receipt = sample_receipt();
+        receipt.execution_id = 0;
+        assert!(!is_satisfied(&sample_policy(), &receipt, &sample_actions()));
     }
 
     #[test]
     fn public_input_vector_has_the_expected_shape() {
         let v = public_inputs(&sample_policy(), &sample_receipt());
-        assert_eq!(v.len(), 6 + MAX_POLICY_TARGETS);
+        assert_eq!(v.len(), 7 + MAX_POLICY_TARGETS);
         assert_eq!(v[0], CircuitField::from(1_000u64));
         assert_eq!(v[5], CircuitField::from(2u64));
     }
@@ -530,7 +624,7 @@ mod tests {
         let instances = cs.num_instance_variables();
         println!("constraints = {constraints}, instance variables = {instances}");
         // 14 public inputs plus the constant-one slot.
-        assert_eq!(instances, 6 + MAX_POLICY_TARGETS + 1);
+        assert_eq!(instances, 7 + MAX_POLICY_TARGETS + 1);
         assert!(
             (500..50_000).contains(&constraints),
             "constraint count {constraints} outside the expected band"

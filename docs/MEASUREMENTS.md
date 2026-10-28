@@ -9,11 +9,17 @@ trace back to a command here. Re-run and replace, never copy from memory.
 cargo test -p zkagent-proofs constraint_count_is_sane -- --nocapture
 ```
 ```
-constraints = 3265, instance variables = 15
+constraints = 3333, instance variables = 16
 test result: ok. 1 passed
 ```
-15 instance variables = 14 public inputs + the constant-one slot. The test
+16 instance variables = 15 public inputs + the constant-one slot. The test
 asserts both numbers, so a regression fails rather than shifting silently.
+
+A second test, `public_input_order_matches_the_allocation_order`, compares the
+constraint system's `instance_assignment` to `public_inputs()` element by
+element. It was verified to FAIL when the vector is deliberately permuted — the
+defect class it exists for is a permuted vector, where every individual input is
+correct and the proof still does not verify.
 
 ## Test suite
 
@@ -33,7 +39,7 @@ Z=target/debug/zkagent.exe
 $Z setup  --seed 7 --out keys/
 $Z policy --max-amount 1000 --max-per-action 300 --expires-at 2000 \
           --chain-id 1 --targets 3,7,9 --seed 99 --out policy.json
-echo '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1}' > receipt.json
+echo '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001}' > receipt.json
 echo '[{"target":3,"amount":250,"trace_digest":11},{"target":7,"amount":150,"trace_digest":22}]' > actions.json
 $Z prove  --keys keys/ --policy policy.json --receipt receipt.json --actions actions.json --out proof.json
 $Z verify --keys keys/ --policy policy.json --receipt receipt.json --proof proof.json --now 1600
@@ -51,8 +57,17 @@ Negative controls, all exercised through the real binary:
 | Command | Output | Exit |
 |---|---|---|
 | verify with `total_amount: 999` | `REJECT: public inputs do not match the supplied policy/receipt` | 1 |
+| verify with a bumped `execution_id` (replay) | `REJECT: public inputs do not match the supplied policy/receipt` | 1 |
+| verify with `execution_id: 0` | `REJECT: receipt has no execution id (0), so replay cannot be detected` | 1 |
+| verify an expired receipt | `REJECT: policy was expired at the receipt's completion time` | 1 |
 | prove with amount 400 (cap 300) | `error: policy rejected: action amount 400 exceeds per-action cap 300` | 2 |
 | prove with target 4 (not in {3,7,9}) | `error: policy rejected: target 4 is not in the allow-list` | 2 |
+| prove with 9 actions (max 8) | `error: policy rejected: 9 actions supplied, maximum is 8` | 2 |
+
+The semantic checks run **before** the public-input binding. Otherwise every
+specific defect is reported as the same generic "inputs do not match", because a
+mismatched receipt fails binding for whatever reason it mismatched. Ordering the
+cheap refusals first is what lets those messages name the real cause.
 
 ## Timings, serial vs parallel
 
@@ -89,9 +104,26 @@ on the droplet, memory is the constraint (3 GB total), not CPU.
    allocates **one public input per bit**: 896 of them. `verify_proof` then
    expected a 896-element vector and got the 14 the verifier actually has.
 
-A vk's size is a fingerprint of its public-input count: **712 B = 14 inputs**,
+A vk's size is a fingerprint of its public-input count: **712 B = 15 inputs**,
 28 936 B = 896. `constraint_count_is_sane` now asserts the arity, so the number
 cannot drift quietly again.
+
+## A second, subtler ordering bug found in review
+
+Adding `execution_id` was allocated next to the other receipt scalars — the
+natural place — while `public_inputs()` appended it after the allow-list. Every
+individual input was correct; the proof still failed with `InvalidProof`,
+because the circuit's public inputs are ordered by **allocation**, so the
+verifier was supplying a permuted vector.
+
+Two things follow, and both are now permanent:
+
+1. **The circuit's allocation order IS the public-input order.** `public_inputs()`
+   must mirror it, not tidy it.
+2. A test (`public_input_order_matches_the_allocation_order`) compares the
+   constraint system's `instance_assignment` to `public_inputs()` element by
+   element. It was checked against a deliberately permuted vector and fails, so
+   it is a guard rather than decoration.
 
 ## What is still not measured
 

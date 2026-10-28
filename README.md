@@ -57,7 +57,7 @@ cargo run -- policy \
 
 # 3. the agent proves its execution (private witness lives here)
 cat > receipt.json <<'JSON'
-{"total_amount": 400, "action_count": 2, "completed_at": 1500, "chain_id": 1}
+{"total_amount": 400, "action_count": 2, "completed_at": 1500, "chain_id": 1, "execution_id": 1001}
 JSON
 cat > actions.json <<'JSON'
 [{"target": 3, "amount": 250, "trace_digest": 11},
@@ -105,10 +105,17 @@ to a public network. See `docs/ARCHITECTURE.md` §"Trusted setup".
 4. **arkworks 0.5.x, not 0.6.x.** 0.6.0 moved `AllocVar`/`UInt`/`Boolean` into
    a new `ark-r1cs-std` and removed `ark_relations::r1cs`; see
    `docs/ARCHITECTURE.md` §"Substrate".
-5. **The public-input order has exactly one definition** (`public_inputs()`),
-   because a verifier that assembles it by hand can reorder it — and a
-   reordered vector either fails a valid proof or, worse, accepts a proof about
-   different values.
+5. **The public-input order has exactly one definition** (`public_inputs()`), and
+   it is the circuit's **allocation** order — not the semantically tidy one.
+   `execution_id` is allocated after the allow-list for that reason; putting it
+   next to the other receipt scalars permutes the vector and every honest proof
+   fails with `InvalidProof`. A test compares the constraint system's
+   `instance_assignment` to `public_inputs()` element by element.
+6. **Every receipt carries a non-zero `execution_id`**, and it is a public
+   input. Without it two identical executions produce identical public inputs,
+   so a proof could be re-presented forever. The circuit refuses `0`; a verifier
+   that must accept a receipt at most once also keeps the set of ids it has seen
+   (`Receipt::is_replay`).
 
 ## Licence
 

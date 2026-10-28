@@ -166,8 +166,17 @@ represent the same policy, a signature on one would authorise the other.
 0 max_amount      4 receipt_total
 1 max_per_action  5 receipt_action_count
 2 expires_at      6..13 allowed_targets[0..8]   (padded by repeating target[0])
-3 completed_at
+3 completed_at    14   execution_id              (anti-replay; must be non-zero)
 ```
+
+The order is fixed by **allocation order inside the circuit**, and
+`public_inputs()` must reproduce it exactly. `execution_id` is allocated last,
+after the allow-list, precisely because the vector is ordered by allocation
+rather than by meaning — allocating it next to the other receipt scalars (the
+natural place) permutes the vector and makes every honest proof fail with
+`InvalidProof`. A test asserts the constraint system's `instance_assignment`
+equals `public_inputs()` element by element, and it has been verified to fail
+when the order is permuted.
 
 `public_inputs(policy, receipt)` in `zkagent-proofs::circuit` is the **only**
 definition of this order. A verifier that assembles the vector by hand can
@@ -185,6 +194,7 @@ proof about different values.
 | C5 | `Σ amount_i = receipt_total` | the receipt is *explained* by the actions |
 | C6 | `#(amount_i ≠ 0) = receipt_action_count` | the claimed count is the real count |
 | C7 | `completed_at < expires_at` | the execution happened while the policy was live |
+| C8 | `execution_id ≠ 0` | an id-0 receipt silently disables a verifier's anti-replay set |
 
 C4 deserves a note: in a field, a product is zero exactly when one factor is
 zero, so the product constraint is precisely "the target equals some allowed
@@ -254,9 +264,13 @@ system.
 
 ### 5.4 Known gaps to close before "public"
 
-1. **No nonce / execution id.** Two identical executions produce identical
-   public inputs. A verifier that must accept each receipt at most once needs a
-   nonce in the policy and receipt. (Cheap: two more public inputs.)
+1. **~~No nonce / execution id.~~ CLOSED.** `Receipt` now carries an
+   `execution_id`, it is a public input, and the circuit refuses the reserved
+   value `0`. Two identical executions no longer produce identical public
+   inputs, so a proof cannot be re-presented as a new execution. Freshness is
+   stateful and therefore still the verifier's job: `Receipt::is_replay(seen)`
+   answers "have I accepted this id before", and a verifier that must accept
+   each receipt at most once keeps that set.
 2. **No revocation.** An expired policy stops new receipts, but there is no
    "revoke now" path. Needs a revocation commitment the verifier checks.
 3. **Single-party trusted setup.** See §6.
@@ -292,8 +306,8 @@ Measured on this implementation, not estimated:
 
 | Metric | Value | How |
 |---|---|---|
-| constraints | **3265** | `constraint_count_is_sane` test (`--nocapture`) |
-| public inputs | **14** | asserted by the same test (`num_instance_variables == 15`, incl. the constant-one slot) |
+| constraints | **3333** | `constraint_count_is_sane` test (`--nocapture`) |
+| public inputs | **15** | asserted by the same test (`num_instance_variables == 16`, incl. the constant-one slot) |
 | proof | **128 B** (2 170 B JSON artifact) | `proof.json` |
 | verifying key | **712 B** | `keys/vk.bin` |
 | proving key | **649 KB** | `keys/pk.bin` |

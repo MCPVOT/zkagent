@@ -37,6 +37,15 @@ pub struct Receipt {
     pub completed_at: u64,
     /// Chain / network the execution happened on.
     pub chain_id: u64,
+    /// Unique identifier for this execution, chosen by the agent.
+    ///
+    /// This is the anti-replay measure. Without it, two identical executions
+    /// produce identical public inputs, so a proof produced once could be
+    /// re-presented forever and a verifier could not tell a fresh execution
+    /// from a replayed proof. The verifier must reject an id it has already
+    /// seen (see `Receipt::is_replay`) and must refuse `0`, which is reserved
+    /// as "unset".
+    pub execution_id: u64,
 }
 
 impl Receipt {
@@ -49,7 +58,19 @@ impl Receipt {
         out.extend_from_slice(&self.action_count.to_be_bytes());
         out.extend_from_slice(&self.completed_at.to_be_bytes());
         out.extend_from_slice(&self.chain_id.to_be_bytes());
+        out.extend_from_slice(&self.execution_id.to_be_bytes());
         out
+    }
+
+    /// True when this receipt reuses an execution id the verifier has already
+    /// accepted.
+    ///
+    /// The proof system cannot enforce this on its own — freshness is stateful,
+    /// and a circuit is stateless — so a verifier that must accept each receipt
+    /// at most once keeps a set of seen ids (`seen.contains(&receipt.execution_id)`).
+    /// This helper exists so every caller answers the question the same way.
+    pub fn is_replay(&self, seen: &[u64]) -> bool {
+        seen.contains(&self.execution_id)
     }
 
     /// Checks the receipt against a policy, returning every violation found.
@@ -77,6 +98,12 @@ impl Receipt {
                 completed_at: self.completed_at,
                 expires_at: policy.expires_at,
             });
+        }
+        if self.execution_id == 0 {
+            // 0 is reserved as "unset": a receipt without an id cannot be
+            // checked for replay, so accepting one silently disables the
+            // anti-replay measure.
+            violations.push(ReceiptViolation::MissingExecutionId);
         }
         if violations.is_empty() {
             Ok(())
@@ -110,13 +137,18 @@ pub enum ReceiptViolation {
         /// Policy expiry.
         expires_at: u64,
     },
+    /// The receipt carries no execution id, so replay cannot be detected.
+    MissingExecutionId,
 }
 
 impl std::fmt::Display for ReceiptViolation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ChainMismatch { receipt, policy } => {
-                write!(f, "chain mismatch: receipt on {receipt}, policy for {policy}")
+                write!(
+                    f,
+                    "chain mismatch: receipt on {receipt}, policy for {policy}"
+                )
             }
             Self::TotalExceedsPolicy { total, max } => {
                 write!(f, "total {total} exceeds policy cap {max}")
@@ -124,7 +156,14 @@ impl std::fmt::Display for ReceiptViolation {
             Self::Expired {
                 completed_at,
                 expires_at,
-            } => write!(f, "receipt at {completed_at} is past policy expiry {expires_at}"),
+            } => write!(
+                f,
+                "receipt at {completed_at} is past policy expiry {expires_at}"
+            ),
+            Self::MissingExecutionId => write!(
+                f,
+                "receipt has no execution id (0), so replay cannot be detected"
+            ),
         }
     }
 }
@@ -144,6 +183,7 @@ mod tests {
             action_count: 2,
             completed_at: 500,
             chain_id: 1,
+            execution_id: 1,
         };
         assert!(r.check_against(&policy()).is_ok());
     }
@@ -155,6 +195,7 @@ mod tests {
             action_count: 2,
             completed_at: 500,
             chain_id: 1,
+            execution_id: 1,
         };
         let v = r.check_against(&policy()).unwrap_err();
         assert!(v.contains(&ReceiptViolation::TotalExceedsPolicy {
@@ -170,6 +211,7 @@ mod tests {
             action_count: 1,
             completed_at: 500,
             chain_id: 999,
+            execution_id: 1,
         };
         let v = r.check_against(&policy()).unwrap_err();
         assert!(v.contains(&ReceiptViolation::ChainMismatch {
@@ -185,11 +227,40 @@ mod tests {
             action_count: 1,
             completed_at: 1_000,
             chain_id: 1,
+            execution_id: 1,
         };
         let v = r.check_against(&policy()).unwrap_err();
         assert!(v.contains(&ReceiptViolation::Expired {
             completed_at: 1_000,
             expires_at: 1_000
         }));
+    }
+
+    #[test]
+    fn zero_execution_id_fails() {
+        // A receipt with no id silently disables anti-replay, so it is a
+        // violation rather than a defaulted field.
+        let r = Receipt {
+            total_amount: 10,
+            action_count: 1,
+            completed_at: 500,
+            chain_id: 1,
+            execution_id: 0,
+        };
+        let v = r.check_against(&policy()).unwrap_err();
+        assert!(v.contains(&ReceiptViolation::MissingExecutionId));
+    }
+
+    #[test]
+    fn replay_is_detected_from_a_seen_id() {
+        let r = Receipt {
+            total_amount: 10,
+            action_count: 1,
+            completed_at: 500,
+            chain_id: 1,
+            execution_id: 7,
+        };
+        assert!(!r.is_replay(&[1, 2, 3]));
+        assert!(r.is_replay(&[1, 7, 9]));
     }
 }

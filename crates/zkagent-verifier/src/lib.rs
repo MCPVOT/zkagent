@@ -28,12 +28,9 @@
 
 use ark_bn254::Bn254;
 use ark_groth16::Groth16;
-use ark_snark::SNARK;
 use zkagent_core::{Policy, Receipt};
 use zkagent_proofs::circuit::public_inputs;
-use zkagent_proofs::prover::{
-    prepare, verifying_key_from_bytes, ProofBytes, FORMAT_VERSION,
-};
+use zkagent_proofs::prover::{prepare, verifying_key_from_bytes, ProofBytes, FORMAT_VERSION};
 
 /// The outcome of a verification.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +59,8 @@ pub enum RejectReason {
     ChainMismatch,
     /// The policy was expired when the execution completed.
     Expired,
+    /// The receipt carries no execution id, so replay cannot be detected.
+    MissingExecutionId,
     /// The Groth16 proof did not verify.
     InvalidProof,
     /// The proof could not be parsed.
@@ -81,6 +80,10 @@ impl std::fmt::Display for RejectReason {
             Self::UnauthorisedPolicy => write!(f, "policy signature is not valid for this policy"),
             Self::ChainMismatch => write!(f, "receipt chain does not match the policy chain"),
             Self::Expired => write!(f, "policy was expired at the receipt's completion time"),
+            Self::MissingExecutionId => write!(
+                f,
+                "receipt has no execution id (0), so replay cannot be detected"
+            ),
             Self::InvalidProof => write!(f, "Groth16 proof did not verify"),
             Self::MalformedProof(m) => write!(f, "malformed proof: {m}"),
         }
@@ -112,27 +115,15 @@ pub fn verify(
         });
     }
 
-    // 2. Public-input binding: recompute from OUR policy/receipt.
-    let expected = public_inputs(policy, receipt);
-    let claimed = match proof.public_inputs_fr() {
-        Ok(v) => v,
-        Err(e) => {
-            return Verdict::Reject(RejectReason::MalformedProof(e.to_string()));
-        }
-    };
-    if expected != claimed {
-        return Verdict::Reject(RejectReason::PublicInputMismatch);
+    // 2. Cheap semantic refusals first, so the message names the actual fault.
+    //    (Checked before the input binding: a mismatched receipt fails binding
+    //    for any reason at all, which turns every specific defect into the same
+    //    generic message.)
+    if receipt.execution_id == 0 {
+        // Defence in depth: the circuit already refuses id 0, but an id-0
+        // receipt would silently disable any anti-replay set a verifier keeps.
+        return Verdict::Reject(RejectReason::MissingExecutionId);
     }
-
-    // 3. Authority: the human signed THIS policy.
-    let sig = zkagent_core::SignatureBytes {
-        bytes: policy_signature.to_vec(),
-    };
-    if !zkagent_core::verify_policy_signature(authority_pubkey, policy, &sig) {
-        return Verdict::Reject(RejectReason::UnauthorisedPolicy);
-    }
-
-    // 4. Chain + freshness.
     if receipt.chain_id != policy.chain_id {
         return Verdict::Reject(RejectReason::ChainMismatch);
     }
@@ -149,6 +140,26 @@ pub fn verify(
         }
     }
 
+    // 3. Public-input binding: recompute from OUR policy/receipt.
+    let expected = public_inputs(policy, receipt);
+    let claimed = match proof.public_inputs_fr() {
+        Ok(v) => v,
+        Err(e) => {
+            return Verdict::Reject(RejectReason::MalformedProof(e.to_string()));
+        }
+    };
+    if expected != claimed {
+        return Verdict::Reject(RejectReason::PublicInputMismatch);
+    }
+
+    // 4. Authority: the human signed THIS policy.
+    let sig = zkagent_core::SignatureBytes {
+        bytes: policy_signature.to_vec(),
+    };
+    if !zkagent_core::verify_policy_signature(authority_pubkey, policy, &sig) {
+        return Verdict::Reject(RejectReason::UnauthorisedPolicy);
+    }
+
     // 5. The proof.
     let vk = match verifying_key_from_bytes(vk_bytes) {
         Ok(vk) => vk,
@@ -158,7 +169,10 @@ pub fn verify(
         Ok(p) => p,
         Err(e) => return Verdict::Reject(RejectReason::MalformedProof(e.to_string())),
     };
-    let pvk = prepare(&vk);
+    let pvk = match prepare(&vk) {
+        Ok(pvk) => pvk,
+        Err(e) => return Verdict::Reject(RejectReason::MalformedProof(e.to_string())),
+    };
     match Groth16::<Bn254>::verify_proof(&pvk, &raw_proof, &expected) {
         Ok(true) => Verdict::Accept,
         Ok(false) => Verdict::Reject(RejectReason::InvalidProof),
@@ -166,14 +180,9 @@ pub fn verify(
     }
 }
 
-fn decode_pubkey(_bytes: &[u8]) -> Option<()> {
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_serialize::CanonicalSerialize;
     use zkagent_core::{policy_commitment, Action, Authority};
     use zkagent_proofs::prover::{prove, setup};
 
@@ -200,6 +209,7 @@ mod tests {
             action_count: 2,
             completed_at: 1_500,
             chain_id: 1,
+            execution_id: 1,
         }
     }
 
@@ -228,7 +238,15 @@ mod tests {
     fn happy_path_accepts() {
         let f = fixture();
         assert_eq!(
-            verify(&f.vk, &policy(), &receipt(), &f.proof, &f.pubkey, &f.sig, Some(1_600)),
+            verify(
+                &f.vk,
+                &policy(),
+                &receipt(),
+                &f.proof,
+                &f.pubkey,
+                &f.sig,
+                Some(1_600)
+            ),
             Verdict::Accept
         );
     }
@@ -240,7 +258,15 @@ mod tests {
         let mut r = receipt();
         r.total_amount = 401;
         assert_eq!(
-            verify(&f.vk, &policy(), &r, &f.proof, &f.pubkey, &f.sig, Some(1_600)),
+            verify(
+                &f.vk,
+                &policy(),
+                &r,
+                &f.proof,
+                &f.pubkey,
+                &f.sig,
+                Some(1_600)
+            ),
             Verdict::Reject(RejectReason::PublicInputMismatch)
         );
     }
@@ -267,7 +293,15 @@ mod tests {
     fn wrong_vk_is_rejected() {
         let f = fixture();
         let other = setup(12).unwrap().verifying_key_bytes().unwrap();
-        match verify(&other, &policy(), &receipt(), &f.proof, &f.pubkey, &f.sig, Some(1_600)) {
+        match verify(
+            &other,
+            &policy(),
+            &receipt(),
+            &f.proof,
+            &f.pubkey,
+            &f.sig,
+            Some(1_600),
+        ) {
             Verdict::Reject(_) => {}
             Verdict::Accept => panic!("a proof must not verify under a different key"),
         }
@@ -281,10 +315,20 @@ mod tests {
             action_count: 2,
             completed_at: 2_000,
             chain_id: 1,
+            execution_id: 1,
         };
         assert_eq!(
-            verify(&f.vk, &policy(), &r, &f.proof, &f.pubkey, &f.sig, Some(3_000)),
-            Verdict::Reject(RejectReason::PublicInputMismatch)
+            verify(
+                &f.vk,
+                &policy(),
+                &r,
+                &f.proof,
+                &f.pubkey,
+                &f.sig,
+                Some(3_000)
+            ),
+            Verdict::Reject(RejectReason::Expired),
+            "expiry must be named as the cause, not reported as an input mismatch"
         );
     }
 
@@ -292,7 +336,15 @@ mod tests {
     fn future_receipt_is_rejected() {
         let f = fixture();
         assert!(matches!(
-            verify(&f.vk, &policy(), &receipt(), &f.proof, &f.pubkey, &f.sig, Some(1_000)),
+            verify(
+                &f.vk,
+                &policy(),
+                &receipt(),
+                &f.proof,
+                &f.pubkey,
+                &f.sig,
+                Some(1_000)
+            ),
             Verdict::Reject(_)
         ));
     }
@@ -303,7 +355,15 @@ mod tests {
         let mut p = f.proof.clone();
         p.format_version = FORMAT_VERSION + 1;
         assert_eq!(
-            verify(&f.vk, &policy(), &receipt(), &p, &f.pubkey, &f.sig, Some(1_600)),
+            verify(
+                &f.vk,
+                &policy(),
+                &receipt(),
+                &p,
+                &f.pubkey,
+                &f.sig,
+                Some(1_600)
+            ),
             Verdict::Reject(RejectReason::FormatMismatch {
                 artifact: FORMAT_VERSION + 1,
                 expected: FORMAT_VERSION
@@ -317,5 +377,45 @@ mod tests {
         // built from a HashMap iteration order).
         let p = policy();
         assert_eq!(policy_commitment(&p), policy_commitment(&p));
+    }
+
+    #[test]
+    fn a_proof_bound_to_one_execution_id_does_not_verify_for_another() {
+        // The anti-replay property: the execution id is a public input, so a
+        // proof made for id 1 cannot be re-presented as id 2.
+        let f = fixture();
+        let mut r = receipt();
+        r.execution_id = 2;
+        assert_eq!(
+            verify(
+                &f.vk,
+                &policy(),
+                &r,
+                &f.proof,
+                &f.pubkey,
+                &f.sig,
+                Some(1_600)
+            ),
+            Verdict::Reject(RejectReason::PublicInputMismatch)
+        );
+    }
+
+    #[test]
+    fn a_zero_execution_id_is_rejected() {
+        let f = fixture();
+        let mut r = receipt();
+        r.execution_id = 0;
+        match verify(
+            &f.vk,
+            &policy(),
+            &r,
+            &f.proof,
+            &f.pubkey,
+            &f.sig,
+            Some(1_600),
+        ) {
+            Verdict::Reject(_) => {}
+            Verdict::Accept => panic!("id 0 must never verify"),
+        }
     }
 }

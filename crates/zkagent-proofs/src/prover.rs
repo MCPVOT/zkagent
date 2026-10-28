@@ -27,13 +27,13 @@ use ark_std::rand::rngs::StdRng;
 use ark_std::rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 
-use zkagent_core::{Action, Policy, Receipt};
+use zkagent_core::{Action, Policy, Receipt, MAX_ACTIONS};
 
 use crate::circuit::{build_circuit, public_inputs, CircuitField};
 
 /// On-disk artifact format version. Bump on any change to the circuit, the
 /// public-input order, or the encoding.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 
 /// A Groth16 proving key plus the verifier's key, produced by a setup run.
 pub struct Keys {
@@ -73,12 +73,14 @@ pub fn setup(seed: u64) -> Result<Keys, ProverError> {
     // The circuit shape is fixed by the protocol constants, so any well-formed
     // policy/receipt produces the same constraint system. We use a minimal
     // dummy instance purely to fix the shape.
-    let policy = Policy::new(1, 1, 1, 1, vec![0]).map_err(|e| ProverError::Policy(e.to_string()))?;
+    let policy =
+        Policy::new(1, 1, 1, 1, vec![0]).map_err(|e| ProverError::Policy(e.to_string()))?;
     let receipt = Receipt {
         total_amount: 0,
         action_count: 0,
         completed_at: 0,
         chain_id: 1,
+        execution_id: 1,
     };
     let circuit = build_circuit(&policy, &receipt, &[]);
     let mut rng = StdRng::seed_from_u64(seed);
@@ -102,6 +104,17 @@ pub fn prove(
     receipt
         .check_against(policy)
         .map_err(|v| ProverError::PolicyRejected(format!("{v:?}")))?;
+    if actions.len() > MAX_ACTIONS {
+        // `build_circuit` pads/truncates to MAX_ACTIONS, so an over-long list
+        // would otherwise fail later as an unexplained "witness does not
+        // satisfy the circuit" (the truncated sum no longer matches the
+        // receipt). Name the real cause instead.
+        return Err(ProverError::PolicyRejected(format!(
+            "{} actions supplied, maximum is {}",
+            actions.len(),
+            MAX_ACTIONS
+        )));
+    }
     for a in actions {
         if a.amount > policy.max_per_action {
             return Err(ProverError::PolicyRejected(format!(
@@ -128,7 +141,10 @@ pub fn prove(
         build_circuit(policy, receipt, actions)
             .generate_constraints(cs.clone())
             .map_err(|e| ProverError::Synthesis(format!("{e:?}")))?;
-        if !cs.is_satisfied().map_err(|e| ProverError::Synthesis(format!("{e:?}")))? {
+        if !cs
+            .is_satisfied()
+            .map_err(|e| ProverError::Synthesis(format!("{e:?}")))?
+        {
             return Err(ProverError::PolicyRejected(
                 "witness does not satisfy the circuit".to_string(),
             ));
@@ -210,8 +226,13 @@ pub fn proving_key_from_bytes(bytes: &[u8]) -> Result<ProvingKey<Bn254>, ProverE
 }
 
 /// Prepares a verifying key for repeated verification.
-pub fn prepare(vk: &VerifyingKey<Bn254>) -> PreparedVerifyingKey<Bn254> {
-    Groth16::<Bn254>::process_vk(vk).expect("verifying key is well formed")
+///
+/// Returns a `Result` rather than panicking: a verifier processes artifacts
+/// from untrusted peers, and a hostile or corrupted verifying key must be a
+/// rejection, not a crash. (An earlier version used `expect` here, which broke
+/// the "never panics on hostile input" invariant.)
+pub fn prepare(vk: &VerifyingKey<Bn254>) -> Result<PreparedVerifyingKey<Bn254>, ProverError> {
+    Groth16::<Bn254>::process_vk(vk).map_err(|e| ProverError::VerifyingKey(format!("{e:?}")))
 }
 
 /// Errors from the prover.
@@ -227,6 +248,8 @@ pub enum ProverError {
     Synthesis(String),
     /// Proving failed.
     Prove(String),
+    /// The verifying key could not be prepared.
+    VerifyingKey(String),
     /// (De)serialisation failed.
     Serialise(String),
 }
@@ -239,6 +262,7 @@ impl std::fmt::Display for ProverError {
             Self::Setup(m) => write!(f, "setup error: {m}"),
             Self::Synthesis(m) => write!(f, "synthesis error: {m}"),
             Self::Prove(m) => write!(f, "prove error: {m}"),
+            Self::VerifyingKey(m) => write!(f, "verifying key error: {m}"),
             Self::Serialise(m) => write!(f, "serialise error: {m}"),
         }
     }
@@ -275,6 +299,7 @@ mod tests {
             action_count: 2,
             completed_at: 1_500,
             chain_id: 1,
+            execution_id: 1,
         }
     }
 
@@ -284,7 +309,7 @@ mod tests {
         let proof = prove(&keys, &policy(), &receipt(), &actions()).unwrap();
         assert_eq!(proof.format_version, FORMAT_VERSION);
         assert!(!proof.proof.is_empty());
-        assert_eq!(proof.public_inputs.len(), 6 + 8);
+        assert_eq!(proof.public_inputs.len(), 7 + 8);
         // The proof must round-trip through its serialised form.
         assert!(proof.to_proof().is_ok());
     }
@@ -302,6 +327,7 @@ mod tests {
             action_count: 1,
             completed_at: 1_500,
             chain_id: 1,
+            execution_id: 1,
         };
         assert!(matches!(
             prove(&keys, &policy(), &r, &bad),
@@ -322,6 +348,7 @@ mod tests {
             action_count: 1,
             completed_at: 1_500,
             chain_id: 1,
+            execution_id: 1,
         };
         assert!(matches!(
             prove(&keys, &policy(), &r, &bad),

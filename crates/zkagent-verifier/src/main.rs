@@ -162,6 +162,7 @@ struct ReceiptJson {
     action_count: u32,
     completed_at: u64,
     chain_id: u64,
+    execution_id: u64,
 }
 
 impl From<&Receipt> for ReceiptJson {
@@ -171,6 +172,7 @@ impl From<&Receipt> for ReceiptJson {
             action_count: r.action_count,
             completed_at: r.completed_at,
             chain_id: r.chain_id,
+            execution_id: r.execution_id,
         }
     }
 }
@@ -182,6 +184,7 @@ impl From<&ReceiptJson> for Receipt {
             action_count: r.action_count,
             completed_at: r.completed_at,
             chain_id: r.chain_id,
+            execution_id: r.execution_id,
         }
     }
 }
@@ -219,10 +222,16 @@ fn run() -> Result<ExitCode, String> {
         Command::Setup { seed, out } => {
             fs::create_dir_all(&out).map_err(|e| format!("mkdir {}: {e}", out.display()))?;
             let keys = setup(seed).map_err(|e| e.to_string())?;
-            fs::write(out.join("vk.bin"), keys.verifying_key_bytes().map_err(|e| e.to_string())?)
-                .map_err(|e| format!("write vk: {e}"))?;
-            fs::write(out.join("pk.bin"), keys.proving_key_bytes().map_err(|e| e.to_string())?)
-                .map_err(|e| format!("write pk: {e}"))?;
+            fs::write(
+                out.join("vk.bin"),
+                keys.verifying_key_bytes().map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| format!("write vk: {e}"))?;
+            fs::write(
+                out.join("pk.bin"),
+                keys.proving_key_bytes().map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| format!("write pk: {e}"))?;
             println!("setup complete: {}", out.display());
             Ok(ExitCode::SUCCESS)
         }
@@ -274,18 +283,15 @@ fn run() -> Result<ExitCode, String> {
                 })
                 .collect();
 
-            let pk_bytes = fs::read(keys.join("pk.bin"))
-                .map_err(|e| format!("read pk.bin: {e}"))?;
-            let vk_bytes = fs::read(keys.join("vk.bin"))
-                .map_err(|e| format!("read vk.bin: {e}"))?;
+            let pk_bytes =
+                fs::read(keys.join("pk.bin")).map_err(|e| format!("read pk.bin: {e}"))?;
+            let vk_bytes =
+                fs::read(keys.join("vk.bin")).map_err(|e| format!("read vk.bin: {e}"))?;
             let proving = zkagent_proofs::prover::proving_key_from_bytes(&pk_bytes)
                 .map_err(|e| e.to_string())?;
             let verifying = zkagent_proofs::prover::verifying_key_from_bytes(&vk_bytes)
                 .map_err(|e| e.to_string())?;
-            let keys = zkagent_proofs::prover::Keys {
-                proving,
-                verifying,
-            };
+            let keys = zkagent_proofs::prover::Keys { proving, verifying };
 
             let proof: ProofBytes =
                 prove(&keys, &policy, &receipt, &actions).map_err(|e| e.to_string())?;
@@ -306,10 +312,10 @@ fn run() -> Result<ExitCode, String> {
             let receipt_json: ReceiptJson = read_json(&receipt)?;
             let receipt = Receipt::from(&receipt_json);
             let proof: ProofBytes = read_json(&proof)?;
-            let vk_bytes = fs::read(keys.join("vk.bin"))
-                .map_err(|e| format!("read vk.bin: {e}"))?;
-            let pubkey = hex::decode(&signed.authority_pubkey)
-                .map_err(|e| format!("decode pubkey: {e}"))?;
+            let vk_bytes =
+                fs::read(keys.join("vk.bin")).map_err(|e| format!("read vk.bin: {e}"))?;
+            let pubkey =
+                hex::decode(&signed.authority_pubkey).map_err(|e| format!("decode pubkey: {e}"))?;
             let sig = hex::decode(&signed.signature).map_err(|e| format!("decode sig: {e}"))?;
 
             match verify(&vk_bytes, &policy, &receipt, &proof, &pubkey, &sig, now) {
