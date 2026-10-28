@@ -52,8 +52,13 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          BIN="$(pwd)/target/release/zkagent"
+          # GitHub sets GITHUB_WORKSPACE; fall back to pwd for a local run. Do NOT
+          # rely on `pwd` alone: the step later `cd`s into a temp dir, and a
+          # relative binary path then resolves against the wrong directory.
+          ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
+          BIN="$ROOT/target/release/zkagent"
           if [ -f "$BIN.exe" ]; then BIN="$BIN.exe"; fi
+          [ -x "$BIN" ] || { echo "FAIL: no release binary at $BIN"; exit 1; }
 
           WORK="$(mktemp -d)"
           cd "$WORK"
@@ -67,22 +72,32 @@ jobs:
             --actions actions.json --out proof.json || exit 1
 
           fail=0
+          rc=0
 
+          # NOTE: GitHub runs `shell: bash` as `bash -e ...`, so a command that
+          # is SUPPOSED to exit non-zero aborts the whole step before any
+          # `[ $? -eq N ]` check runs. `cmd || rc=$?` is the idiom that survives
+          # errexit: the `||` handles the failure, so `-e` never fires.
+          #
           # 1. honest receipt must ACCEPT (exit 0)
+          rc=0
           "$BIN" verify --keys keys/ --policy policy.json --receipt receipt.json \
-            --proof proof.json --now 1600
-          [ $? -eq 0 ] || { echo "FAIL: honest receipt was not accepted"; fail=1; }
+            --proof proof.json --now 1600 || rc=$?
+          [ "$rc" -eq 0 ] || { echo "FAIL: honest receipt was not accepted (exit $rc)"; fail=1; }
 
           # 2. replay with a bumped execution id must REJECT (exit 1)
           sed 's/"execution_id":1001/"execution_id":1002/' receipt.json > receipt2.json
+          rc=0
           "$BIN" verify --keys keys/ --policy policy.json --receipt receipt2.json \
-            --proof proof.json --now 1600
-          [ $? -eq 1 ] || { echo "FAIL: replayed proof was not rejected"; fail=1; }
+            --proof proof.json --now 1600 || rc=$?
+          [ "$rc" -eq 1 ] || { echo "FAIL: replayed proof was not rejected (exit $rc)"; fail=1; }
 
           # 3. an over-cap action must be refused by the prover (exit 2)
           printf '%s\n' '[{"target":3,"amount":999,"trace_digest":1}]' > bad.json
+          rc=0
           "$BIN" prove --keys keys/ --policy policy.json --receipt receipt.json \
-            --actions bad.json --out bad_proof.json
-          [ $? -eq 2 ] || { echo "FAIL: over-cap action was not refused"; fail=1; }
+            --actions bad.json --out bad_proof.json || rc=$?
+          [ "$rc" -eq 2 ] || { echo "FAIL: over-cap action was not refused (exit $rc)"; fail=1; }
 
-          exit "$fail"
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          echo "e2e exit-code contract OK"
