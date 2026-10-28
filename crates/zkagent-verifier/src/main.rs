@@ -440,6 +440,17 @@ fn run() -> Result<ExitCode, String> {
                 hex::decode(&signed.authority_pubkey).map_err(|e| format!("decode pubkey: {e}"))?;
             let sig = hex::decode(&signed.signature).map_err(|e| format!("decode sig: {e}"))?;
 
+            if now.is_none() {
+                // Not an error: expiry is enforced inside the circuit, so this
+                // only drops the future-dating check. But a verifier that
+                // forgets the flag should be told, rather than silently running
+                // with one fewer check than it believes it has.
+                eprintln!(
+                    "warning: --now not supplied, so the future-dating check is skipped \
+                     (the circuit still enforces completed_at < expires_at)"
+                );
+            }
+
             // Replay gate. Loaded BEFORE verification so a corrupt state file is
             // a hard error rather than an unnoticed empty set — silently
             // starting fresh would make "truncate the file" a replay attack.

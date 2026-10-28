@@ -64,6 +64,7 @@ Negative controls, all exercised through the real binary:
 | `policy` with no `--authority-key` and no `--seed` | `error: policy: no authorisation key. Pass --authority-key <path> ...` | 2 |
 | `policy --seed 99` (demo path) | `warning: signing with DEMO seed 99. That key is reproducible ... forgeable by anyone` on stderr, policy still written | 0 |
 | `policy --seed 5 --authority-key auth.hex` | `error: the argument '--seed <SEED>' cannot be used with '--authority-key <AUTHORITY_KEY>'` | 2 |
+| verify without `--now` | `warning: --now not supplied, so the future-dating check is skipped` on stderr, then `ACCEPT` | 0 |
 | verify with `execution_id: 0` | `REJECT: receipt has no execution id (0), so replay cannot be detected` | 1 |
 | verify an expired receipt | `REJECT: policy was expired at the receipt's completion time` | 1 |
 | prove with amount 400 (cap 300) | `error: policy rejected: action amount 400 exceeds per-action cap 300` | 2 |
