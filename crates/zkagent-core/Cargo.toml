@@ -1,0 +1,21 @@
+[package]
+name = "zkagent-core"
+description = "Protocol data types for zero-knowledge attestation of AI agent executions"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+repository = "https://github.com/MCPVOT/zkagent"
+homepage = "https://github.com/MCPVOT/zkagent"
+
+[dependencies]
+ark-ec = { version = "0.5.0", default-features = false, features = ["std"] }
+ark-ff = { version = "0.5.0", default-features = false, features = ["std"] }
+ark-serialize = { version = "0.5.0", default-features = false, features = ["derive", "std"] }
+ark-std = { version = "0.5.0", default-features = false, features = ["std"] }
+ark-bn254 = { version = "0.5.0", default-features = false, features = ["curve", "std"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+ark-std = { version = "0.5.0", default-features = false, features = ["std"] }

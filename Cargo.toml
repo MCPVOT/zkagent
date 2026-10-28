@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/zkagent-core",
+    "crates/zkagent-proofs",
+    "crates/zkagent-verifier",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+repository = "https://github.com/MCPVOT/zkagent"
+
+# Proving is memory-hungry relative to parallelism: on a 2 vCPU / 3 GB droplet,
+# parallel NTTs peak higher than the box can take. Keep the default profile
+# single-threaded and modest, and let CI override with `--features parallel`.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 1
+
+[profile.test]
+opt-level = 2
