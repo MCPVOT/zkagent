@@ -148,6 +148,23 @@ See `docs/EMBEDDING.md` for the plain-Rust, Tauri, MCP and CLI paths, and for
 the rules a host inherits (no printing, no global state, no panics, fail-closed
 on unreadable state).
 
+## Contributing and governance
+
+| File | What it is |
+|---|---|
+| `CONTRIBUTING.md` | the loop: one unit, claim, RED then GREEN, what "done" means |
+| `GOVERNANCE.md` | soundness outranks everything; judged by the work; credit is by work |
+| `SECURITY.md` | private disclosure, and what never enters the repo |
+| `docs/TESTING.md` | the tiers, and the tests that may never be skipped |
+| `.github/pull_request_template.md` | the RED/GREEN + soundness statement a PR must carry |
+| `tools/leaderboard/` | the contributor board, ranked by merged PRs |
+
+The contributor leaderboard publishes to the `leaderboard` branch every four
+hours. It credits the **originating** author even when a maintainer re-lands the
+work (a `Co-Authored-By:` trailer in at least half the commits, or anywhere in
+the PR body). Those attribution rules are unit-tested, because a rule that
+silently reassigns credit is worse than no leaderboard at all.
+
 ## Licence
 
 MIT — see `LICENSE`.

@@ -1,0 +1,37 @@
+name: Good first issue
+description: A small, self-contained task for a new contributor.
+labels: ["good first issue", "ready"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep these genuinely small: one file, one test, one afternoon. If it needs
+        a design decision, it is not a good first issue.
+  - type: textarea
+    id: task
+    attributes:
+      label: The task
+      description: One or two sentences. Imperative.
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where to start
+      description: File paths, the function to look at, and any doc section.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      description: The command that must pass, and any test that must exist.
+      placeholder: |
+        cargo test -p zkagent-core is green, and a new test fails before the change.
+    validations:
+      required: true
+  - type: textarea
+    id: hints
+    attributes:
+      label: Hints
+      description: Pitfalls a newcomer would hit. Optional but valued.

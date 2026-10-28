@@ -1,0 +1,60 @@
+name: Bug report
+description: Something behaves differently from what the protocol claims.
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not report a soundness or privacy bug here.** A bug that makes a false
+        statement verify, or that leaks the private witness, must go through the
+        private advisory flow in [SECURITY.md](../blob/master/SECURITY.md).
+  - type: textarea
+    id: claimed
+    attributes:
+      label: What does the protocol claim?
+      description: Quote the constraint, the section of ARCHITECTURE.md, or the doc line.
+      placeholder: "C5 says sum(actions) == receipt.total_amount."
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happens instead
+      description: The command and its real output. Not a description of it.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Smallest reproduction
+      description: The exact commands, and the receipt/actions/proof if they matter.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options:
+        - CLI (`zkagent`)
+        - MCP server (`zkagent-mcp`)
+        - Library (`zkagent-service`)
+        - Circuit / prover
+        - Verifier
+        - Docs
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or version
+      placeholder: "master @ 02805ca, or `zkagent --version`"
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: Before submitting
+      options:
+        - label: This is not a soundness, authority-bypass, replay or witness-leak bug (those go to SECURITY.md).
+          required: true

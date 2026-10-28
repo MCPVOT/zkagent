@@ -1,0 +1,56 @@
+name: Feature or protocol change
+description: A new capability, or a change to what the protocol claims.
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A protocol change is a change to a **claim**, so state the claim first.
+        Changes to the circuit also need a plan for the trusted setup: the keys
+        are circuit-specific and must be regenerated.
+  - type: textarea
+    id: claim
+    attributes:
+      label: The claim this adds or changes
+      description: One sentence a verifier could check. "An agent can prove X without revealing Y."
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why the current design cannot express it
+      description: If it can be done in a shell or a wrapper, say why that is not enough.
+    validations:
+      required: true
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Which layer does it belong in?
+      options:
+        - zkagent-core (vocabulary)
+        - zkagent-proofs (circuit / prover)
+        - zkagent-verifier (pure verification)
+        - zkagent-service (operations)
+        - a shell (CLI / MCP / Tauri)
+        - docs or tooling
+    validations:
+      required: true
+  - type: textarea
+    id: cost
+    attributes:
+      label: Known cost
+      description: |
+        Circuit size, proving time, public inputs, new artifacts, new failure modes.
+        "No cost" is almost never true; say what you checked.
+  - type: input
+    id: issue
+    attributes:
+      label: Related issue or research
+      description: Link a report in `docs/research/` or an issue number if one exists.
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have read docs/ARCHITECTURE.md and this is not already listed as a known gap.
+          required: true

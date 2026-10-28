@@ -1,0 +1,23 @@
+# Review routing.
+#
+# The circuit and the verifier are the soundness-critical surface: a change
+# there is reviewed by the maintainer, not merged on a green build alone.
+
+# Soundness-critical
+/crates/zkagent-proofs/          @MCPVOT
+/crates/zkagent-verifier/        @MCPVOT
+/crates/zkagent-core/src/policy.rs    @MCPVOT
+/crates/zkagent-core/src/authority.rs @MCPVOT
+
+# The layer every shell depends on
+/crates/zkagent-service/         @MCPVOT
+
+# Process and automation
+/.github/                        @MCPVOT
+/tools/                          @MCPVOT
+
+# Claims and evidence
+/docs/ARCHITECTURE.md            @MCPVOT
+/docs/TESTING.md                 @MCPVOT
+/docs/research/                  @MCPVOT
+/SECURITY.md                     @MCPVOT

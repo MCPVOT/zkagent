@@ -1,0 +1,89 @@
+name: leaderboard
+
+# Publishes the contributor leaderboard, ranked by merged pull requests.
+#
+# The data lives on the `leaderboard` orphan branch under `site/`:
+#   site/index.html        the page (static, fetches the JSON beside it)
+#   site/leaderboard.json  the data
+#
+# Publish it with Pages: Settings -> Pages -> Source: branch `leaderboard`,
+# folder `/site`. That setting is manual and cannot be expressed in this file.
+#
+# Security note: no `${{ github.event.* }}` value is interpolated into any
+# `run:` block, so there is no command-injection vector here.
+
+on:
+  schedule:
+    # Every 4 hours at minute 17, off the top-of-hour rush.
+    - cron: "17 */4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leaderboard
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # A fork must never publish this repository's board.
+    if: github.event_name != 'schedule' || github.repository == 'MCPVOT/zkagent'
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The attribution rules decide whether a contributor keeps credit when a
+      # maintainer re-lands their work. They are tested before anything is
+      # published, so a broken rule cannot quietly rewrite the board.
+      - name: test the attribution rules
+        run: python tools/leaderboard/test_generate.py
+
+      - name: generate
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/site"
+          cp tools/leaderboard/site/index.html "$RUNNER_TEMP/site/index.html"
+          python tools/leaderboard/generate.py \
+            --repo "${{ github.repository }}" \
+            --out "$RUNNER_TEMP/site/leaderboard.json"
+
+      - name: publish to the leaderboard branch
+        run: |
+          set -euo pipefail
+          stamp="$(date -u +%Y-%m-%dT%H:%MZ)"
+
+          if git ls-remote --exit-code --heads origin leaderboard >/dev/null 2>&1; then
+            git fetch --depth=1 origin leaderboard:leaderboard
+            git checkout leaderboard
+          else
+            echo "creating the leaderboard branch"
+            git checkout --orphan leaderboard
+            git rm -rf --quiet . || true
+          fi
+
+          rm -rf site
+          mkdir -p site
+          cp "$RUNNER_TEMP/site/index.html" site/index.html
+          cp "$RUNNER_TEMP/site/leaderboard.json" site/leaderboard.json
+          : > site/.nojekyll
+
+          git add site
+          if git diff --cached --quiet; then
+            echo "no changes"
+            exit 0
+          fi
+
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "leaderboard: update ${stamp}"
+          git push origin leaderboard
