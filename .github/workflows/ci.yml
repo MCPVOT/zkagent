@@ -99,5 +99,25 @@ jobs:
             --actions bad.json --out bad_proof.json || rc=$?
           [ "$rc" -eq 2 ] || { echo "FAIL: over-cap action was not refused (exit $rc)"; fail=1; }
 
+          # 4. replay protection with a persistent seen-set: the first verify
+          #    accepts and records, the second must be refused (exit 1).
+          rc=0
+          "$BIN" verify --keys keys/ --policy policy.json --receipt receipt.json \
+            --proof proof.json --now 1600 --seen ids.json || rc=$?
+          [ "$rc" -eq 0 ] || { echo "FAIL: first verify with --seen was not accepted (exit $rc)"; fail=1; }
+
+          rc=0
+          "$BIN" verify --keys keys/ --policy policy.json --receipt receipt.json \
+            --proof proof.json --now 1600 --seen ids.json || rc=$?
+          [ "$rc" -eq 1 ] || { echo "FAIL: replayed proof was accepted despite a seen-set (exit $rc)"; fail=1; }
+
+          # 5. a corrupt seen-set must fail CLOSED (exit 2), never verify against
+          #    an empty set — otherwise truncating the file defeats replay defence.
+          printf '%s' '{"execution_ids":[1,' > ids_bad.json
+          rc=0
+          "$BIN" verify --keys keys/ --policy policy.json --receipt receipt.json \
+            --proof proof.json --now 1600 --seen ids_bad.json || rc=$?
+          [ "$rc" -eq 2 ] || { echo "FAIL: corrupt seen-set did not fail closed (exit $rc)"; fail=1; }
+
           if [ "$fail" -ne 0 ]; then exit 1; fi
           echo "e2e exit-code contract OK"

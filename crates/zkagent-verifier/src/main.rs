@@ -7,8 +7,12 @@
 //! zkagent prove   --keys keys/ --policy policy.json --receipt receipt.json \
 //!                 --actions actions.json --out proof.json
 //! zkagent verify  --keys keys/ --policy policy.json --receipt receipt.json \
-//!                 --proof proof.json --now 1600
+//!                 --proof proof.json --now 1600 [--seen ids.json]
 //! ```
+//!
+//! `--seen` keeps a persistent set of accepted execution ids and refuses a
+//! receipt whose id is already present. Without it a verifier accepts the same
+//! proof repeatedly: a Groth16 proof attests to an execution, not to freshness.
 //!
 //! Exit codes: `0` = accept / success, `1` = verification rejected, `2` = usage
 //! or I/O error. A verifier in a pipeline can therefore branch on the status
@@ -23,7 +27,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
-use zkagent_core::{Action, Authority, Policy, Receipt};
+use zkagent_core::{Action, Authority, Policy, Receipt, SeenExecutions};
 use zkagent_proofs::prover::{prove, setup, ProofBytes};
 use zkagent_verifier::{verify, Verdict};
 
@@ -109,6 +113,13 @@ enum Command {
         /// The verifier's current time, for the future-dating check.
         #[arg(long)]
         now: Option<u64>,
+        /// Persistent set of accepted execution ids.
+        ///
+        /// With this flag a receipt whose execution id was already accepted is
+        /// rejected as a replay, and a newly accepted id is recorded. Omit it to
+        /// verify a proof statelessly (one-shot checks, tests).
+        #[arg(long)]
+        seen: Option<PathBuf>,
     },
 }
 
@@ -306,6 +317,7 @@ fn run() -> Result<ExitCode, String> {
             receipt,
             proof,
             now,
+            seen,
         } => {
             let signed: SignedPolicyFile = read_json(&policy)?;
             let policy = signed.policy.to_policy()?;
@@ -318,8 +330,49 @@ fn run() -> Result<ExitCode, String> {
                 hex::decode(&signed.authority_pubkey).map_err(|e| format!("decode pubkey: {e}"))?;
             let sig = hex::decode(&signed.signature).map_err(|e| format!("decode sig: {e}"))?;
 
+            // Replay gate. Loaded BEFORE verification so a corrupt state file is
+            // a hard error rather than an unnoticed empty set — silently
+            // starting fresh would make "truncate the file" a replay attack.
+            let mut seen_set = match seen {
+                Some(path) => Some(SeenExecutions::load(&path).map_err(|e| e.to_string())?),
+                None => None,
+            };
+
+            if let Some(s) = &seen_set {
+                if s.contains(receipt.execution_id) {
+                    println!(
+                        "REJECT: execution id {} was already accepted (replay)",
+                        receipt.execution_id
+                    );
+                    return Ok(ExitCode::from(1));
+                }
+            }
+
             match verify(&vk_bytes, &policy, &receipt, &proof, &pubkey, &sig, now) {
                 Verdict::Accept => {
+                    // Record before announcing: an acceptance the verifier
+                    // cannot remember is a replay waiting to happen, so a failed
+                    // write must not be reported as ACCEPT.
+                    if let Some(s) = seen_set.as_mut() {
+                        match s.record(receipt.execution_id) {
+                            Ok(true) => {}
+                            Ok(false) => {
+                                // Another writer recorded it between the check
+                                // and the verdict: treat as the replay it is.
+                                println!(
+                                    "REJECT: execution id {} was already accepted (replay)",
+                                    receipt.execution_id
+                                );
+                                return Ok(ExitCode::from(1));
+                            }
+                            Err(e) => {
+                                return Err(format!(
+                                    "verified, but could not record the execution id, so this \
+                                     acceptance is refused: {e}"
+                                ))
+                            }
+                        }
+                    }
                     println!("ACCEPT");
                     Ok(ExitCode::SUCCESS)
                 }

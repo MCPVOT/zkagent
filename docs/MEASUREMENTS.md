@@ -27,9 +27,9 @@ correct and the proof still does not verify.
 cargo test
 ```
 ```
-running 18 tests   ... test result: ok. 18 passed; 0 failed   (zkagent-core)
-running 13 tests   ... test result: ok. 13 passed; 0 failed   (zkagent-proofs)
-running  8 tests   ... test result: ok.  8 passed; 0 failed   (zkagent-verifier)
+running 28 tests   ... test result: ok. 28 passed; 0 failed   (zkagent-core)
+running 17 tests   ... test result: ok. 17 passed; 0 failed   (zkagent-proofs)
+running 10 tests   ... test result: ok. 10 passed; 0 failed   (zkagent-verifier)
 ```
 
 ## End-to-end CLI, including negative controls
@@ -58,6 +58,8 @@ Negative controls, all exercised through the real binary:
 |---|---|---|
 | verify with `total_amount: 999` | `REJECT: public inputs do not match the supplied policy/receipt` | 1 |
 | verify with a bumped `execution_id` (replay) | `REJECT: public inputs do not match the supplied policy/receipt` | 1 |
+| verify the same proof again with `--seen ids.json` | `REJECT: execution id 1001 was already accepted (replay)` | 1 |
+| verify with a corrupt `ids.json` | `error: replay state ids.json is unreadable (...); refusing to verify against an unknown set of accepted executions` | 2 |
 | verify with `execution_id: 0` | `REJECT: receipt has no execution id (0), so replay cannot be detected` | 1 |
 | verify an expired receipt | `REJECT: policy was expired at the receipt's completion time` | 1 |
 | prove with amount 400 (cap 300) | `error: policy rejected: action amount 400 exceeds per-action cap 300` | 2 |

@@ -113,9 +113,11 @@ to a public network. See `docs/ARCHITECTURE.md` §"Trusted setup".
    `instance_assignment` to `public_inputs()` element by element.
 6. **Every receipt carries a non-zero `execution_id`**, and it is a public
    input. Without it two identical executions produce identical public inputs,
-   so a proof could be re-presented forever. The circuit refuses `0`; a verifier
-   that must accept a receipt at most once also keeps the set of ids it has seen
-   (`Receipt::is_replay`).
+   so a proof could be re-presented forever. The circuit refuses `0`, and
+   `zkagent verify --seen ids.json` keeps the set of ids it has already
+   accepted, so a replay is refused rather than re-accepted. A state file that
+   cannot be parsed fails **closed**: an unreadable ledger must never be read as
+   "nothing seen yet".
 
 ## Licence
 

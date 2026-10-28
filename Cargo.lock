@@ -1103,6 +1103,8 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "ed25519-dalek",
+ "serde",
+ "serde_json",
  "sha2",
 ]
 

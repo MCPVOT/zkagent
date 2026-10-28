@@ -268,9 +268,13 @@ system.
    `execution_id`, it is a public input, and the circuit refuses the reserved
    value `0`. Two identical executions no longer produce identical public
    inputs, so a proof cannot be re-presented as a new execution. Freshness is
-   stateful and therefore still the verifier's job: `Receipt::is_replay(seen)`
-   answers "have I accepted this id before", and a verifier that must accept
-   each receipt at most once keeps that set.
+   stateful, so it is the verifier's job, and it is now **mechanism rather than
+   prose**: `zkagent_core::SeenExecutions` is a persistent, sorted, atomically
+   written set of accepted ids, and `zkagent verify --seen ids.json` refuses an
+   id it has already accepted. It **fails closed** — a state file that exists but
+   cannot be parsed is an error, never an empty set, because otherwise
+   "truncate the file" would be the replay attack. Limits, stated: the set only
+   grows (no pruning/expiry) and it assumes a single writer.
 2. **No revocation.** An expired policy stops new receipts, but there is no
    "revoke now" path. Needs a revocation commitment the verifier checks.
 3. **Single-party trusted setup.** See §6.
