@@ -276,27 +276,40 @@ unsound in practice.
 
 ## 7. Measured behaviour
 
-*(Numbers are from `cargo test`/`cargo run` on this machine and on the droplet;
-see `docs/MEASUREMENTS.md` for the exact commands and raw output.)*
+Measured on this implementation, not estimated:
 
-The design probe in `05-rust-implementation-design.md` measured the same circuit
-shape independently:
-
-| Metric | Laptop (x86_64-msvc) | Droplet (2 vCPU, 3.9 GB) |
+| Metric | Value | How |
 |---|---|---|
-| constraints | 2162 | 2162 |
+| constraints | **3265** | `constraint_count_is_sane` test (`--nocapture`) |
+| public inputs | **14** | asserted by the same test (`num_instance_variables == 15`, incl. the constant-one slot) |
+| proof size | **128 B** | `proof.json` → `len(proof)` after decode |
+| verifying key | **712 B** | `keys/vk.bin` |
+| proving key | **649 KB** | `keys/pk.bin` |
+| end-to-end | **ACCEPT** | real CLI run: setup → policy → prove → verify |
+| prove (debug profile) | 1.28 s | Wall clock, `target/debug` binary |
+| verify (debug profile) | 46 ms | Wall clock, `target/debug` binary |
+
+An independent implementation probe of the same statement shape
+(`05-rust-implementation-design.md`) measured a smaller circuit (2162
+constraints — it predates the `pub_u64` range-binding, which is what makes this
+one 3265) and its release-profile timings are the useful reference for what
+release optimisations buy:
+
+| Metric | Laptop (release) | Droplet 2 vCPU (release) |
+|---|---|---|
 | setup | 107 ms | 396 ms |
 | prove | 161 ms | 382 ms |
 | verify | 2.09 ms | 3.48 ms |
-| proof size | 128 B | 128 B |
-| verifying key | 552 B | 552 B |
-| proving key | 479 056 B | 479 056 B |
 | peak RSS | — | 29 MB |
-| whole process | — | 1.39 s |
 
-That is the whole argument for Groth16 over a zkVM here: **a receipt costs about
-a third of a second to make on a $12/month droplet, and two milliseconds to
-check.** A zkVM proof of a general program would be minutes and hundreds of MB.
+**The argument for Groth16 over a zkVM here:** a receipt costs a fraction of a
+second to produce on a $12/month droplet and a couple of milliseconds to check,
+with a 128-byte proof and a sub-megabyte key. A zkVM proof of a general program
+is minutes and hundreds of megabytes for the same statement.
+
+Constraint count is guarded by a test with an explicit expected band, so a change
+that quietly allocates per-bit public inputs (which happened — see §12 and the
+`MalformedVerifyingKey` failure) fails CI instead of producing a mystery.
 
 ---
 

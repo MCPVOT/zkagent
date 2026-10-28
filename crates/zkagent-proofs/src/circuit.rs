@@ -518,6 +518,26 @@ mod tests {
     }
 
     #[test]
+    fn constraint_count_is_sane() {
+        // A regression guard on circuit size: a change that accidentally
+        // allocates per-bit public inputs (see `pub_u64`) or explodes the
+        // constraint count shows up here instead of in a proving-time mystery.
+        let cs = ConstraintSystem::<CircuitField>::new_ref();
+        build_circuit(&sample_policy(), &sample_receipt(), &sample_actions())
+            .generate_constraints(cs.clone())
+            .unwrap();
+        let constraints = cs.num_constraints();
+        let instances = cs.num_instance_variables();
+        println!("constraints = {constraints}, instance variables = {instances}");
+        // 14 public inputs plus the constant-one slot.
+        assert_eq!(instances, 6 + MAX_POLICY_TARGETS + 1);
+        assert!(
+            (500..50_000).contains(&constraints),
+            "constraint count {constraints} outside the expected band"
+        );
+    }
+
+    #[test]
     fn padding_never_widens_the_allowed_set() {
         // Padding repeats a real target, so a forbidden target stays forbidden
         // even though the table has 8 slots.
