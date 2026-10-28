@@ -41,9 +41,15 @@ jobs:
 
       # The leaderboard's attribution rules decide whether a contributor keeps
       # credit when a maintainer re-lands their work. Stdlib-only, so it runs
-      # everywhere.
+      # everywhere. `python` is not guaranteed on ubuntu runners, `python3` is
+      # not guaranteed on windows ones, so probe for both.
       - name: test the leaderboard attribution rules
-        run: python tools/leaderboard/test_generate.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          PY="$(command -v python || command -v python3)"
+          [ -n "$PY" ] || { echo "FAIL: no python on PATH"; exit 1; }
+          "$PY" tools/leaderboard/test_generate.py
 
       - name: release build
         run: cargo build --release
