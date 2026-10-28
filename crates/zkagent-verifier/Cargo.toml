@@ -11,10 +11,6 @@ repository = "https://github.com/MCPVOT/zkagent"
 name = "zkagent_verifier"
 path = "src/lib.rs"
 
-[[bin]]
-name = "zkagent"
-path = "src/main.rs"
-
 [dependencies]
 zkagent-core = { path = "../zkagent-core" }
 zkagent-proofs = { path = "../zkagent-proofs" }

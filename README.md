@@ -84,10 +84,15 @@ to a public network. See `docs/ARCHITECTURE.md` §"Trusted setup".
 
 | Path | What it is |
 |---|---|
-| `crates/zkagent-core` | policy, receipt, canonical encoding, Ed25519 authority |
+| `crates/zkagent-core` | policy, receipt, canonical encoding, Ed25519 authority, replay state |
 | `crates/zkagent-proofs` | the Groth16 circuit and the prover |
-| `crates/zkagent-verifier` | verification logic + the `zkagent` CLI |
+| `crates/zkagent-verifier` | pure verification: a proof and inputs become a verdict, no state |
+| `crates/zkagent-service` | **the four operations over files** — the layer an embedder uses |
+| `crates/zkagent-cli` | the `zkagent` command line (a thin shell over the service) |
+| `crates/zkagent-mcp` | an MCP server, so any agent harness can drive the same operations |
+| `examples/tauri-plugin` | embedding zkagent in a Tauri v2 app |
 | `docs/ARCHITECTURE.md` | design, threat model, decisions, roadmap |
+| `docs/EMBEDDING.md` | how to embed it: plain Rust, Tauri, MCP, CLI |
 | `docs/research/` | the cited research corpus this was built from |
 | `tools/loop.py` | the loop-learning ledger and its consumer |
 | `docs/loop-ledger.jsonl` | append-only record of what was tried and what happened |
@@ -126,6 +131,22 @@ to a public network. See `docs/ARCHITECTURE.md` §"Trusted setup".
    checked **before** the public-input binding, so a tampered policy is reported
    as `policy signature is not valid for this policy` rather than as a generic
    mismatch that hides the forgery.
+
+## Embedding it
+
+`zkagent` is a library first. The CLI is one shell; the MCP server is another;
+a Tauri app is a third. They all call the same four operations in
+`zkagent-service`, so they cannot disagree about what a proof means.
+
+```rust
+// one dependency
+let outcome = zkagent_service::verify(&keys, &policy, &receipt, &proof, Some(now), Some(&seen))?;
+assert!(outcome.accepted());
+```
+
+See `docs/EMBEDDING.md` for the plain-Rust, Tauri, MCP and CLI paths, and for
+the rules a host inherits (no printing, no global state, no panics, fail-closed
+on unreadable state).
 
 ## Licence
 

@@ -1,4 +1,5 @@
 /target
+target/
 /keys
 *.bin
 policy.json

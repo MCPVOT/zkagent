@@ -77,6 +77,11 @@ pub fn policy_commitment(policy: &Policy) -> [u8; 32] {
 }
 
 /// A human's signing keypair for policy authorisation.
+///
+/// `Debug` is derived on purpose: `ed25519_dalek`'s own `Debug` for a signing
+/// key prints only the verifying key and explicitly avoids the secret bytes,
+/// so this cannot leak key material into a log line.
+#[derive(Debug, Clone)]
 pub struct Authority {
     signing: SigningKey,
 }

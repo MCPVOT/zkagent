@@ -1,0 +1,264 @@
+//! `zkagent` CLI — a shell over the service layer.
+//!
+//! ```text
+//! zkagent setup   --seed 7 --out keys/
+//! zkagent policy  --max-amount 1000 --max-per-action 300 --expires-at 2000 \
+//!                 --chain-id 1 --targets 3,7,9 --authority-key authority.hex --out policy.json
+//! zkagent prove   --keys keys/ --policy policy.json --receipt receipt.json \
+//!                 --actions actions.json --out proof.json
+//! zkagent verify  --keys keys/ --policy policy.json --receipt receipt.json \
+//!                 --proof proof.json --now 1600 [--seen ids.json]
+//! ```
+//!
+//! Exit codes: `0` = accept / success, `1` = verification rejected, `2` = usage
+//! or I/O error. A verifier in a pipeline can therefore branch on the status
+//! without parsing text.
+//!
+//! # This crate contains no protocol logic
+//!
+//! Every rule — policy validation, the replay gate, fail-closed state, key
+//! handling — lives in `zkagent-service`. This file parses arguments and
+//! prints. That split is what lets the same behaviour be embedded in a Tauri
+//! app or driven over MCP without a second implementation.
+
+#![deny(unsafe_code)]
+
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use clap::{Parser, Subcommand};
+
+use zkagent_service::{AuthorityKey, PolicySpec, Verdict};
+
+#[derive(Parser)]
+#[command(
+    name = "zkagent",
+    about = "Zero-knowledge attestation of AI agent executions",
+    long_about = "Prove that an AI agent's execution stayed inside a human-signed policy \
+                  without revealing which actions it took."
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Run the circuit-specific trusted setup and write the key pair.
+    Setup {
+        /// Seed for the setup RNG. Fixed seeds are for tests only.
+        #[arg(long, default_value_t = 7)]
+        seed: u64,
+        /// Directory to write `vk.bin` and `pk.bin` into.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Create and sign a policy.
+    Policy {
+        /// Total cap.
+        #[arg(long)]
+        max_amount: u64,
+        /// Per-action cap.
+        #[arg(long)]
+        max_per_action: u64,
+        /// Expiry (unix seconds, exclusive).
+        #[arg(long)]
+        expires_at: u64,
+        /// Chain id.
+        #[arg(long)]
+        chain_id: u64,
+        /// Comma-separated allow-list of target ids.
+        #[arg(long, value_delimiter = ',')]
+        targets: Vec<u64>,
+        /// Path to the 32-byte Ed25519 authority seed, hex-encoded.
+        ///
+        /// Created with the OS CSPRNG if it does not exist. This is the
+        /// production path: the key authorises every policy, so it must live in
+        /// a protected file (mode 0600 is set on creation) or a KMS.
+        #[arg(long)]
+        authority_key: Option<PathBuf>,
+        /// DEMO ONLY: derive the authority key from a 64-bit seed.
+        ///
+        /// Reproducible by design, therefore forgeable by anyone who guesses the
+        /// seed. Present so tests and the walkthrough in the README are
+        /// deterministic; never use it for a policy that matters.
+        #[arg(long, conflicts_with = "authority_key")]
+        seed: Option<u64>,
+        /// Output path for the signed policy.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Prove that a set of actions explains a receipt inside a policy.
+    Prove {
+        /// Key directory produced by `setup`.
+        #[arg(long)]
+        keys: PathBuf,
+        /// Signed policy file.
+        #[arg(long)]
+        policy: PathBuf,
+        /// Receipt file.
+        #[arg(long)]
+        receipt: PathBuf,
+        /// Actions file (the private witness).
+        #[arg(long)]
+        actions: PathBuf,
+        /// Output path for the proof artifact.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Verify a proof artifact.
+    Verify {
+        /// Key directory produced by `setup`.
+        #[arg(long)]
+        keys: PathBuf,
+        /// Signed policy file.
+        #[arg(long)]
+        policy: PathBuf,
+        /// Receipt file.
+        #[arg(long)]
+        receipt: PathBuf,
+        /// Proof artifact.
+        #[arg(long)]
+        proof: PathBuf,
+        /// The verifier's current time, for the future-dating check.
+        #[arg(long)]
+        now: Option<u64>,
+        /// Persistent set of accepted execution ids.
+        ///
+        /// With this flag a receipt whose execution id was already accepted is
+        /// rejected as a replay, and a newly accepted id is recorded. Omit it to
+        /// verify a proof statelessly (one-shot checks, tests).
+        #[arg(long)]
+        seen: Option<PathBuf>,
+    },
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(code) => code,
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn run() -> Result<ExitCode, String> {
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Setup { seed, out } => {
+            let outcome = zkagent_service::setup(&out, seed).map_err(|e| e.to_string())?;
+            println!(
+                "setup complete: {} (vk {} B, pk {} B)",
+                outcome.keys_dir.display(),
+                outcome.verifying_key_bytes,
+                outcome.proving_key_bytes
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Policy {
+            max_amount,
+            max_per_action,
+            expires_at,
+            chain_id,
+            targets,
+            authority_key,
+            seed,
+            out,
+        } => {
+            // Refuse to invent an authorisation root. A silent default here is
+            // a silent vulnerability: a key derived from a fixed seed is
+            // reproducible by anyone, which makes the policy forgeable.
+            let key =
+                match (authority_key, seed) {
+                    (Some(path), _) => AuthorityKey::File(path),
+                    (None, Some(s)) => AuthorityKey::Seed(s),
+                    (None, None) => return Err(
+                        "policy: no authorisation key. Pass --authority-key <path> (created with \
+                         the OS CSPRNG if missing) or --seed <n> for a reproducible demo key."
+                            .to_string(),
+                    ),
+                };
+
+            let spec = PolicySpec {
+                max_amount,
+                max_per_action,
+                expires_at,
+                chain_id,
+                targets,
+            };
+
+            let authorized =
+                zkagent_service::authorize(&out, &spec, &key).map_err(|e| e.to_string())?;
+
+            if authorized.created_key_file {
+                eprintln!(
+                    "authority key created — keep it private, it authorises every policy signed \
+                     with it"
+                );
+            }
+            if let Some(warning) = authorized.warning {
+                eprintln!("warning: {warning}");
+            }
+
+            println!("policy written: {}", out.display());
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Prove {
+            keys,
+            policy,
+            receipt,
+            actions,
+            out,
+        } => {
+            let receipt = zkagent_service::read_receipt(&receipt).map_err(|e| e.to_string())?;
+            let actions = zkagent_service::read_actions(&actions).map_err(|e| e.to_string())?;
+            let proof = zkagent_service::prove(&keys, &policy, &receipt, &actions)
+                .map_err(|e| e.to_string())?;
+            zkagent_service::write_json(&out, &proof).map_err(|e| e.to_string())?;
+            println!("proof written: {}", out.display());
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Verify {
+            keys,
+            policy,
+            receipt,
+            proof,
+            now,
+            seen,
+        } => {
+            if now.is_none() {
+                // Not an error: expiry is enforced inside the circuit, so this
+                // only drops the future-dating check. But a verifier that
+                // forgets the flag should be told, rather than silently running
+                // with one fewer check than it believes it has.
+                eprintln!(
+                    "warning: --now not supplied, so the future-dating check is skipped \
+                     (the circuit still enforces completed_at < expires_at)"
+                );
+            }
+
+            let receipt = zkagent_service::read_receipt(&receipt).map_err(|e| e.to_string())?;
+            let proof: zkagent_proofs::prover::ProofBytes =
+                zkagent_service::read_json(&proof).map_err(|e| e.to_string())?;
+
+            let outcome =
+                zkagent_service::verify(&keys, &policy, &receipt, &proof, now, seen.as_deref())
+                    .map_err(|e| e.to_string())?;
+
+            match outcome.verdict {
+                Verdict::Accept => {
+                    println!("ACCEPT");
+                    Ok(ExitCode::SUCCESS)
+                }
+                Verdict::Reject(reason) => {
+                    println!("REJECT: {reason}");
+                    Ok(ExitCode::from(1))
+                }
+            }
+        }
+    }
+}

@@ -42,6 +42,52 @@ jobs:
       - name: release build
         run: cargo build --release
 
+      # The embeddable example is a standalone crate (excluded from the
+      # workspace). It must still compile and test on its own.
+      - name: "tauri example (no tauri feature: headless-safe)"
+        run: cargo test --manifest-path examples/tauri-plugin/Cargo.toml
+
+      # 5b. THE HARNESS PATH: the same flow driven over MCP JSON-RPC, with no
+      #     CLI involved. This is what an agent harness (Hermes, Claude Code,
+      #     OpenCode) actually does, so it gets its own end-to-end check.
+      - name: end-to-end MCP harness
+        shell: bash
+        run: |
+          set -uo pipefail
+          ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
+          MCP="$ROOT/target/release/zkagent-mcp"
+          [ -x "$MCP" ] || { echo "FAIL: no MCP server at $MCP"; exit 1; }
+
+          WORK="$(mktemp -d)"
+          cd "$WORK"
+          printf '%s\n' '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001}' > receipt.json
+          printf '%s\n' '[{"target":3,"amount":250,"trace_digest":11},{"target":7,"amount":150,"trace_digest":22}]' > actions.json
+
+          cat <<'JSON' | "$MCP" > mcp.out
+          {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}
+          {"jsonrpc":"2.0","id":2,"method":"tools/list"}
+          {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"zkagent_setup","arguments":{"keys_dir":"keys"}}}
+          {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"zkagent_authorize","arguments":{"policy_path":"policy.json","authority_key_path":"authority.hex","max_amount":1000,"max_per_action":300,"expires_at":2000,"chain_id":1,"targets":[3,7,9]}}}
+          {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"zkagent_prove","arguments":{"keys_dir":"keys","policy_path":"policy.json","receipt_path":"receipt.json","actions_path":"actions.json","proof_path":"proof.json"}}}
+          {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"zkagent_verify","arguments":{"keys_dir":"keys","policy_path":"policy.json","receipt_path":"receipt.json","proof_path":"proof.json","seen_path":"seen.json","now":1600}}}
+          {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"zkagent_verify","arguments":{"keys_dir":"keys","policy_path":"policy.json","receipt_path":"receipt.json","proof_path":"proof.json","seen_path":"seen.json","now":1600}}}
+          JSON
+
+          fail=0
+          # One response per request, and nothing else on stdout.
+          lines=$(wc -l < mcp.out)
+          [ "$lines" -eq 7 ] || { echo "FAIL: expected 7 MCP responses, got $lines"; fail=1; }
+
+          grep -q '"protocolVersion"' mcp.out || { echo "FAIL: initialize did not answer"; fail=1; }
+          grep -q 'zkagent_verify' mcp.out || { echo "FAIL: tools/list missing zkagent_verify"; fail=1; }
+          # The first verify must accept.
+          sed -n '6p' mcp.out | grep -q '"accepted":true' || { echo "FAIL: MCP verify did not accept"; fail=1; }
+          # The second verify of the same proof must be refused as a replay.
+          sed -n '7p' mcp.out | grep -q 'already accepted' || { echo "FAIL: MCP replay was not refused"; fail=1; }
+
+          if [ "$fail" -ne 0 ]; then echo "--- mcp.out ---"; cat mcp.out; exit 1; fi
+          echo "MCP harness path OK"
+
       # The half a unit test cannot cover: the real binary, real artifacts, and
       # the exit-code contract (0 accept, 1 reject, 2 usage/IO).
       #

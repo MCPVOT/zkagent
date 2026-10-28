@@ -387,10 +387,17 @@ that quietly allocates per-bit public inputs (which happened — see §12 and th
 crates/zkagent-core        policy.rs   canonical encoding, invariants, tests
                            receipt.rs  violations, reference semantics
                            authority.rs Ed25519 policy signature
-crates/zkagent-proofs      circuit.rs  C1–C7, public-input order
+                           replay.rs   persistent set of accepted execution ids
+crates/zkagent-proofs      circuit.rs  C1–C8, public-input order
                            prover.rs   setup, prove, artifact format
-crates/zkagent-verifier    lib.rs      the five verification steps, verdicts
-                           main.rs     the `zkagent` CLI
+crates/zkagent-verifier    lib.rs      pure verification: steps, verdicts
+crates/zkagent-service     ops.rs      the four operations over files
+                           wire.rs     the on-disk artifact formats
+                           error.rs    ServiceError: every failure carries a path
+crates/zkagent-cli         main.rs     the `zkagent` CLI (a thin shell)
+crates/zkagent-mcp         lib.rs      MCP JSON-RPC handler + tool schemas
+                           main.rs     the stdio loop
+examples/tauri-plugin      lib.rs      embedding in a Tauri v2 app
 tools/loop.py              the learning ledger + its only consumer
 ```
 
@@ -399,6 +406,15 @@ Deliberate structural choices:
 * **core has no groth16 dependency.** A verifier-only deployment, or the JSON
   tooling, does not need to link the prover.
 * **the verifier is a separate crate from the prover.** Same reason.
+* **the service layer is the ONLY place the operations live.** The CLI, the MCP
+  server and an embedded host all call it. A rule that lives in two shells is a
+  rule that will drift, and the drift is always in the security-relevant
+  direction: one shell forgets the replay gate, another forgets that an
+  unreadable state file must fail closed.
+* **the verifier stays stateless.** Freshness is a property of the verifier's
+  memory, so the pure verifier has none and the service layer owns the
+  seen-set. That split keeps `verify()` usable inside a host that manages its
+  own state, and keeps it impossible to forget the fail-closed rule.
 * **`public_inputs()` is the single source of the input order.**
 * **`ProofBytes` carries `format_version`.** A mismatch is a loud rejection, not
   a byte-level reinterpretation.

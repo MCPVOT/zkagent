@@ -61,6 +61,11 @@ pub enum RejectReason {
     Expired,
     /// The receipt carries no execution id, so replay cannot be detected.
     MissingExecutionId,
+    /// This execution id was already accepted before.
+    ///
+    /// A property of the *verifier's state*, not of the proof, which is why it
+    /// lives in the service layer: the pure verifier has no memory.
+    AlreadyAccepted(u64),
     /// The Groth16 proof did not verify.
     InvalidProof,
     /// The proof could not be parsed.
@@ -84,6 +89,9 @@ impl std::fmt::Display for RejectReason {
                 f,
                 "receipt has no execution id (0), so replay cannot be detected"
             ),
+            Self::AlreadyAccepted(id) => {
+                write!(f, "execution id {id} was already accepted (replay)")
+            }
             Self::InvalidProof => write!(f, "Groth16 proof did not verify"),
             Self::MalformedProof(m) => write!(f, "malformed proof: {m}"),
         }

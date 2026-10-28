@@ -1,0 +1,28 @@
+[package]
+name = "zkagent-tauri-example"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Example: embedding zkagent in a Tauri v2 app as a plugin"
+license = "MIT"
+publish = false
+
+# STANDALONE CRATE — excluded from the zkagent workspace on purpose.
+# The workspace must not pull the Tauri dependency tree into its own build.
+[workspace]
+
+[dependencies]
+zkagent-service = { path = "../../crates/zkagent-service" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Optional: enable to get the `#[tauri::command]` wrappers compiled.
+# The default build has NO tauri dependency, so `cargo test` here is fast and
+# works on a headless machine.
+tauri = { version = "2", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = []
+tauri = ["dep:tauri"]
