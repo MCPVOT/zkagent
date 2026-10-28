@@ -1,5 +1,9 @@
 # ZK-ML and zkVM Systems for Proving Computation About ML and Agent Behaviour
 
+> **Provenance.** Third-party and vendor figures, plus our own shipped-tree
+> numbers where labelled "ours". See `README.md#measurement-provenance` before
+> citing anything here as this project's measurement.
+
 **Date.** 2026-10-28
 **Purpose.** Decide whether `zkagent`'s v0 statement — *"an agent's execution stayed within a signed policy"* — belongs in a hand-written fixed-shape circuit (current path) or requires a general-purpose zkVM, and record what each family actually measures.
 **Scope fence.** Proof systems and their measured cost. Not agent frameworks, not prompt security, not token economics.

@@ -3,6 +3,29 @@
 Anything quoted in ARCHITECTURE.md §7 or the skill's `substrate-notes.md` should
 trace back to a command here. Re-run and replace, never copy from memory.
 
+## Measurement provenance
+
+Numbers in this repository come from three different apparatuses, and only the
+first is a claim about the shipped code.
+
+| Kind | Apparatus | Cite it for |
+|---|---|---|
+| **project-measured** | the release binary in this repo, on the machine below | claims about this code |
+| **research-probe** | a separate probe program on an **arkworks 0.6.0** tree | order-of-magnitude reasoning |
+| **borrowed** | a paper or vendor benchmark | context only |
+
+| Number | Value | Provenance |
+|---|---|---|
+| circuit size | 3 333 constraints, 15 public inputs | project-measured (`constraint_count_is_sane`) |
+| probe circuit (research doc 05 §4.2) | 2 162 constraints, 9 public inputs | research probe on 0.6.0, earlier circuit shape |
+| SMT non-membership gadget | `c(d) = 243·d + 2` | research probe on 0.6.0 — re-measure before budgeting |
+| delegation hop | 1 021 constraints | research probe on 0.6.0 |
+| zkVM proving floor | 3.3–16 GB RAM | borrowed benchmark |
+
+The 2 162 figure and the 3 333 figure are both real; they measure different
+circuits. Conflating them is the error, so neither is deleted. See
+`docs/research/README.md#measurement-provenance`.
+
 ## Circuit size and public-input arity
 
 ```bash

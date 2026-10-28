@@ -1,5 +1,11 @@
 # 05 — Rust Implementation Design Spec (zkagent)
 
+> **Provenance.** Every number in this report was measured on an **arkworks
+> 0.6.0** probe tree, and the probe circuit is an earlier shape than the shipped
+> v0. The shipped circuit measures **3 333 constraints / 15 public inputs**
+> (`docs/MEASUREMENTS.md`). This report's 2 162 / 9 is the probe, not the
+> product. See `README.md#measurement-provenance`.
+
 Status: implementation-ready design. Every arkworks API in §2 was **compiled and executed** on this
 machine against the exact pinned versions, not recalled from memory. The probe program whose output is
 quoted in §4.6/§6.2 is the reference implementation of the circuit, and its full source is in

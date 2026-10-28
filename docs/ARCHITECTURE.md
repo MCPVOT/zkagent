@@ -260,7 +260,10 @@ system.
   can authorise any policy.
 * **`trace_digest` is bound but unconstrained in v0.** It is a witness value
   that a v2 will bind to a Merkle root of the transcript. Today it proves
-  nothing on its own — stated plainly rather than implied.
+  nothing on its own — stated plainly rather than implied. PACE [2608.17220]
+  calls exactly this a *field provenance* defect, and CVA [2607.21325] names
+  execution binding as the open problem in the field. Two independent research
+  slices flagged it in the same review, which is why it is stated twice.
 
 ### 5.4 Known gaps to close before "public"
 
@@ -276,7 +279,11 @@ system.
    "truncate the file" would be the replay attack. Limits, stated: the set only
    grows (no pruning/expiry) and it assumes a single writer.
 2. **No revocation.** An expired policy stops new receipts, but there is no
-   "revoke now" path. Needs a revocation commitment the verifier checks.
+   "revoke now" path. Needs a revocation commitment the verifier checks. The
+   implementable shape identified in `docs/research/09`: an epoch-rooted sparse
+   Merkle non-membership proof plus a public status epoch (ShadowPath
+   [2608.19937]) with a reliance-time freshness rule (ChainIT [2610.22899]). The
+   epoch counter itself is free as a public input; the tree is the cost.
 3. **Single-party trusted setup.** See §6.
 4. **No on-chain verifier.** Groth16 on BN254 is EVM-verifiable in principle;
    the Solidity verifier is not written yet (and arkworks 0.5 does not emit one,
@@ -313,6 +320,32 @@ The shipped model:
 - `Authority::generate` returns a `Result`. It never falls back to a predictable
   seed when the OS CSPRNG fails — that failure is precisely when nobody is
   watching.
+
+---
+
+## 5.6 What the literature says about these gaps
+
+Four independent research slices (`docs/research/06..09`) converged on the same
+three gaps. That convergence is why they are stated as structural rather than as
+a to-do list.
+
+1. **Execution binding.** A proof binds the statement that was written, not the
+   behaviour that occurred. Every agent-domain paper in `06` proves one action
+   is compliant; PACE [2608.17220] shows the field provenance defect; CVA
+   [2607.21325] names execution binding as the open problem. Our unconstrained
+   `trace_digest` is an instance of it.
+2. **Completeness.** Omission is the attack that survives single-action proofs.
+   Our receipt's `count` + `total` is an *arithmetic* completeness argument
+   relative to the receipt — not completeness relative to reality, because the
+   receipt's own provenance is trusted. zkLedger (NSDI'18) is the framing worth
+   borrowing; the scoping caveat is ours to keep.
+3. **Revocation.** No A2A-family specification defines it (`revok` appears once
+   in the A2A spec, about keys). The implementable path is in §5.4 item 2.
+
+What this corpus does **not** establish: that the design is novel, that a
+protocol will adopt a ZK binding, or that any borrowed benchmark transfers to
+this tree. `docs/research/README.md` records the provenance of every number and
+the three caveats above.
 
 ---
 

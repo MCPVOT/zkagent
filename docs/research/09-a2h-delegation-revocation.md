@@ -1,5 +1,10 @@
 # 09 — A2H: verifiable delegation, revocation, and accountability
 
+> **Provenance.** The constraint costs below were measured with a probe on an
+> **arkworks 0.6.0** tree, not this repo's pinned 0.5.x. Treat them as gadget
+> costs to re-measure, not as project measurements. See
+> `README.md#measurement-provenance`.
+
 Status: research report + **measured** circuit costs. Every number labelled "measured" was produced by
 the probe in Appendix A, compiled and executed on this machine against the same pinned arkworks 0.6.0
 tree as `05-rust-implementation-design.md`. Numbers borrowed from papers are labelled with their arXiv
