@@ -65,7 +65,7 @@ jobs:
 
           "$BIN" setup --seed 7 --out keys/ || exit 1
           "$BIN" policy --max-amount 1000 --max-per-action 300 --expires-at 2000 \
-            --chain-id 1 --targets 3,7,9 --seed 99 --out policy.json || exit 1
+            --chain-id 1 --targets 3,7,9 --authority-key auth.hex --out policy.json || exit 1
           printf '%s\n' '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001}' > receipt.json
           printf '%s\n' '[{"target":3,"amount":250,"trace_digest":11},{"target":7,"amount":150,"trace_digest":22}]' > actions.json
           "$BIN" prove --keys keys/ --policy policy.json --receipt receipt.json \
@@ -118,6 +118,22 @@ jobs:
           "$BIN" verify --keys keys/ --policy policy.json --receipt receipt.json \
             --proof proof.json --now 1600 --seen ids_bad.json || rc=$?
           [ "$rc" -eq 2 ] || { echo "FAIL: corrupt seen-set did not fail closed (exit $rc)"; fail=1; }
+
+          # 6. a TAMPERED policy must be refused by name (exit 1), not reported
+          #    as a generic input mismatch — the forgery signal must survive.
+          sed 's/"max_amount": 1000/"max_amount": 999999/' policy.json > policy_tampered.json
+          rc=0
+          "$BIN" verify --keys keys/ --policy policy_tampered.json --receipt receipt.json \
+            --proof proof.json --now 1600 || rc=$?
+          [ "$rc" -eq 1 ] || { echo "FAIL: tampered policy was not refused (exit $rc)"; fail=1; }
+
+          # 7. signing a policy with NO key must be refused (exit 2): the tool
+          #    must never invent an authorisation root from a default seed.
+          rc=0
+          "$BIN" policy --max-amount 1000 --max-per-action 300 --expires-at 2000 \
+            --chain-id 1 --targets 3,7,9 --out nokey.json || rc=$?
+          [ "$rc" -eq 2 ] || { echo "FAIL: keyless policy signing was not refused (exit $rc)"; fail=1; }
+          [ ! -f nokey.json ] || { echo "FAIL: a keyless policy file was written"; fail=1; }
 
           if [ "$fail" -ne 0 ]; then exit 1; fi
           echo "e2e exit-code contract OK"

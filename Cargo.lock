@@ -1103,6 +1103,7 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "ed25519-dalek",
+ "getrandom",
  "serde",
  "serde_json",
  "sha2",

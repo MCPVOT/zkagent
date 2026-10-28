@@ -115,9 +115,24 @@ pub fn verify(
         });
     }
 
-    // 2. Cheap semantic refusals first, so the message names the actual fault.
-    //    (Checked before the input binding: a mismatched receipt fails binding
-    //    for any reason at all, which turns every specific defect into the same
+    // 2. AUTHORITY FIRST: is this policy authorised at all?
+    //
+    //    This is the precondition on the whole object, and putting it before the
+    //    input binding is what makes policy tampering legible. A modified policy
+    //    fails the binding too (its fields feed the public inputs), so binding-
+    //    first reported an edited policy as "public inputs do not match" — a
+    //    generic mismatch that hides the fact that someone forged the policy. The
+    //    signature is the only check that names that fault, and it costs ~50us.
+    let sig = zkagent_core::SignatureBytes {
+        bytes: policy_signature.to_vec(),
+    };
+    if !zkagent_core::verify_policy_signature(authority_pubkey, policy, &sig) {
+        return Verdict::Reject(RejectReason::UnauthorisedPolicy);
+    }
+
+    // 3. Cheap semantic refusals, so the message names the actual fault.
+    //    (Also before the input binding: a mismatched receipt fails binding for
+    //    any reason at all, which turns every specific defect into the same
     //    generic message.)
     if receipt.execution_id == 0 {
         // Defence in depth: the circuit already refuses id 0, but an id-0
@@ -140,7 +155,7 @@ pub fn verify(
         }
     }
 
-    // 3. Public-input binding: recompute from OUR policy/receipt.
+    // 4. Public-input binding: recompute from OUR policy/receipt.
     let expected = public_inputs(policy, receipt);
     let claimed = match proof.public_inputs_fr() {
         Ok(v) => v,
@@ -150,14 +165,6 @@ pub fn verify(
     };
     if expected != claimed {
         return Verdict::Reject(RejectReason::PublicInputMismatch);
-    }
-
-    // 4. Authority: the human signed THIS policy.
-    let sig = zkagent_core::SignatureBytes {
-        bytes: policy_signature.to_vec(),
-    };
-    if !zkagent_core::verify_policy_signature(authority_pubkey, policy, &sig) {
-        return Verdict::Reject(RejectReason::UnauthorisedPolicy);
     }
 
     // 5. The proof.
@@ -305,6 +312,30 @@ mod tests {
             Verdict::Reject(_) => {}
             Verdict::Accept => panic!("a proof must not verify under a different key"),
         }
+    }
+
+    #[test]
+    fn a_tampered_policy_is_reported_as_unauthorised_not_as_a_mismatch() {
+        // The forgery signal must survive the ordering. An edited policy also
+        // fails the public-input binding, so a binding-first verifier describes
+        // a forged policy as a generic mismatch — the one case an operator most
+        // needs to be told about explicitly.
+        let f = fixture();
+        let mut p = policy();
+        p.max_amount = 999_999;
+
+        assert_eq!(
+            verify(
+                &f.vk,
+                &p,
+                &receipt(),
+                &f.proof,
+                &f.pubkey,
+                &f.sig,
+                Some(1_600)
+            ),
+            Verdict::Reject(RejectReason::UnauthorisedPolicy)
+        );
     }
 
     #[test]

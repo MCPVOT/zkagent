@@ -21,6 +21,7 @@
 #![deny(unsafe_code)]
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -71,9 +72,20 @@ enum Command {
         /// Comma-separated allow-list of target ids.
         #[arg(long, value_delimiter = ',')]
         targets: Vec<u64>,
-        /// Demo authority key seed. Production must persist a CSPRNG key.
-        #[arg(long, default_value_t = 99)]
-        seed: u64,
+        /// Path to the 32-byte Ed25519 authority seed, hex-encoded.
+        ///
+        /// Created with the OS CSPRNG if it does not exist. This is the
+        /// production path: the key authorises every policy, so it must live in
+        /// a protected file (mode 0600 is set on creation) or a KMS.
+        #[arg(long)]
+        authority_key: Option<PathBuf>,
+        /// DEMO ONLY: derive the authority key from a 64-bit seed.
+        ///
+        /// Reproducible by design, therefore forgeable by anyone who guesses the
+        /// seed. Present so tests and the walkthrough in the README are
+        /// deterministic; never use it for a policy that matters.
+        #[arg(long, conflicts_with = "authority_key")]
+        seed: Option<u64>,
         /// Output path for the signed policy.
         #[arg(long)]
         out: PathBuf,
@@ -217,6 +229,80 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     fs::write(path, text).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
+/// Load the authority key at `path`, or create it with the OS CSPRNG.
+///
+/// The key authorises every policy this operator signs, so it is created
+/// `0600`, written with `create_new` (never silently overwriting an existing
+/// key — that would invalidate every policy already signed), and synced.
+fn load_or_create_authority(path: &Path) -> Result<Authority, String> {
+    match fs::read_to_string(path) {
+        Ok(text) => {
+            let bytes = hex::decode(text.trim())
+                .map_err(|e| format!("authority key {}: not hex: {e}", path.display()))?;
+            let secret = Authority::secret_from_slice(&bytes).map_err(|e| e.to_string())?;
+            warn_if_readable_by_others(path);
+            Ok(Authority::from_secret_bytes(&secret))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let auth = Authority::generate().map_err(|e| e.to_string())?;
+            write_secret_file(path, &auth.secret_bytes())?;
+            eprintln!(
+                "authority key created: {} — keep it private, it authorises every policy \
+                 signed with it",
+                path.display()
+            );
+            Ok(auth)
+        }
+        Err(e) => Err(format!("read {}: {e}", path.display())),
+    }
+}
+
+/// Write secret bytes as hex with restrictive permissions.
+fn write_secret_file(path: &Path, secret: &[u8; 32]) -> Result<(), String> {
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // 0600: owner read/write. Set at open time, so the file is never
+        // world-readable even briefly.
+        opts.mode(0o600);
+    }
+    let mut f = opts
+        .open(path)
+        .map_err(|e| format!("create {}: {e}", path.display()))?;
+    f.write_all(hex::encode(secret).as_bytes())
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    f.sync_all()
+        .map_err(|e| format!("sync {}: {e}", path.display()))
+}
+
+/// Warn when a key file is group- or world-readable. Not fatal: an operator may
+/// legitimately have it on a volume with other protections, but silence here
+/// would hide a real exposure.
+fn warn_if_readable_by_others(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(path) {
+            let mode = meta.permissions().mode() & 0o777;
+            if mode & 0o077 != 0 {
+                eprintln!(
+                    "warning: {} has mode {mode:o}; an authority key should be 0600 \
+                     (group/world access lets another account forge policies)",
+                    path.display()
+                );
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows ACLs are not expressible through std's permission bits; the
+        // operator owns file protection there.
+        let _ = path;
+    }
+}
+
 fn main() -> ExitCode {
     match run() {
         Ok(code) => code,
@@ -253,12 +339,36 @@ fn run() -> Result<ExitCode, String> {
             expires_at,
             chain_id,
             targets,
+            authority_key,
             seed,
             out,
         } => {
             let policy = Policy::new(max_amount, max_per_action, expires_at, chain_id, targets)
                 .map_err(|e| e.to_string())?;
-            let auth = Authority::from_seed(seed);
+
+            // Refuse to invent an authorisation root. Previously the key came
+            // from a default `--seed 99`, so every policy this tool produced was
+            // signed by the same reproducible key and anyone could forge one.
+            // Making the choice explicit is the whole point: a silent default
+            // here is a silent vulnerability.
+            let auth =
+                match (authority_key, seed) {
+                    (Some(path), _) => load_or_create_authority(&path)?,
+                    (None, Some(s)) => {
+                        eprintln!(
+                        "warning: signing with DEMO seed {s}. That key is reproducible from the \
+                         seed alone, so this policy is forgeable by anyone. Use \
+                         --authority-key <path> for anything real."
+                    );
+                        Authority::from_seed(s)
+                    }
+                    (None, None) => return Err(
+                        "policy: no authorisation key. Pass --authority-key <path> (created with \
+                         the OS CSPRNG if missing) or --seed <n> for a reproducible demo key."
+                            .to_string(),
+                    ),
+                };
+
             let sig = auth.sign_policy(&policy);
 
             let pubkey = auth.public_key().as_bytes().to_vec();

@@ -53,7 +53,7 @@ cargo run -- setup --seed 7 --out keys/
 # 2. a human authorises a policy
 cargo run -- policy \
   --max-amount 1000 --max-per-action 300 --expires-at 2000 \
-  --chain-id 1 --targets 3,7,9 --seed 99 --out policy.json
+  --chain-id 1 --targets 3,7,9 --authority-key authority.hex --out policy.json
 
 # 3. the agent proves its execution (private witness lives here)
 cat > receipt.json <<'JSON'
@@ -118,6 +118,14 @@ to a public network. See `docs/ARCHITECTURE.md` §"Trusted setup".
    accepted, so a replay is refused rather than re-accepted. A state file that
    cannot be parsed fails **closed**: an unreadable ledger must never be read as
    "nothing seen yet".
+7. **The authority key is real key material, not a seed.** `policy
+   --authority-key <file>` generates a 32-byte Ed25519 secret with the OS CSPRNG
+   on first use (mode 0600, `create_new`) and reuses it afterwards; `--seed` is
+   the demo path and warns loudly. With neither flag the command refuses: an
+   authorisation root must never come from a silent default. The signature is
+   checked **before** the public-input binding, so a tampered policy is reported
+   as `policy signature is not valid for this policy` rather than as a generic
+   mismatch that hides the forgery.
 
 ## Licence
 

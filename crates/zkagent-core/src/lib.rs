@@ -24,7 +24,8 @@ pub mod receipt;
 pub mod replay;
 
 pub use authority::{
-    policy_commitment, policy_signing_message, verify_policy_signature, Authority, SignatureBytes,
+    policy_commitment, policy_signing_message, verify_policy_signature, Authority, AuthorityError,
+    SignatureBytes, SECRET_KEY_BYTES,
 };
 pub use policy::{Policy, PolicyError, MAX_POLICY_TARGETS, POLICY_DOMAIN};
 pub use receipt::{Action, Receipt, ReceiptViolation, RECEIPT_DOMAIN};

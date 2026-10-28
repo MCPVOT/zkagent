@@ -283,6 +283,36 @@ system.
    so this is a real piece of work — see §10).
 5. **Ed25519 signature is not checked on-chain** without a precompile. Off-chain
    verification is the v0 model.
+6. **~~Authority key material.~~ CLOSED in v0.** See §5.5.
+
+### 5.5 Authority key handling
+
+`Authority` previously had exactly one constructor, `from_seed(u64)`, and the CLI
+defaulted to `--seed 99`. Every policy the tool produced was therefore signed by
+the *same 64-bit-derived key*, and anyone could reproduce it — so anyone could
+forge a policy for any operator who used the default. The docs said production
+"loads key material from a KMS or an encrypted, permission-tight file", but no
+code path existed to do that: the safe option was documentation.
+
+The shipped model:
+
+| Path | Constructor | Use |
+|---|---|---|
+| `policy --authority-key <file>` | `Authority::generate()` on first run, then `from_secret_bytes` | **production** |
+| `policy --seed <n>` | `from_seed` | tests and the demo walkthrough only — prints a warning |
+
+- The key file is created with `create_new` (never silently overwriting a key
+  that has already signed policies) and `0600` on Unix, set at open time so it
+  is never briefly world-readable.
+- A key file that is group- or world-readable produces a warning rather than a
+  hard failure: an operator may have other protections, but silence would hide a
+  real exposure.
+- `policy` with **neither** flag is refused (exit 2) rather than defaulting. A
+  silent default here is a silent vulnerability, and an authorisation root is
+  exactly the wrong place to be helpful.
+- `Authority::generate` returns a `Result`. It never falls back to a predictable
+  seed when the OS CSPRNG fails — that failure is precisely when nobody is
+  watching.
 
 ---
 

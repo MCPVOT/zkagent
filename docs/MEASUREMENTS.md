@@ -38,7 +38,7 @@ running 10 tests   ... test result: ok. 10 passed; 0 failed   (zkagent-verifier)
 Z=target/debug/zkagent.exe
 $Z setup  --seed 7 --out keys/
 $Z policy --max-amount 1000 --max-per-action 300 --expires-at 2000 \
-          --chain-id 1 --targets 3,7,9 --seed 99 --out policy.json
+          --chain-id 1 --targets 3,7,9 --authority-key authority.hex --out policy.json
 echo '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001}' > receipt.json
 echo '[{"target":3,"amount":250,"trace_digest":11},{"target":7,"amount":150,"trace_digest":22}]' > actions.json
 $Z prove  --keys keys/ --policy policy.json --receipt receipt.json --actions actions.json --out proof.json
@@ -60,6 +60,10 @@ Negative controls, all exercised through the real binary:
 | verify with a bumped `execution_id` (replay) | `REJECT: public inputs do not match the supplied policy/receipt` | 1 |
 | verify the same proof again with `--seen ids.json` | `REJECT: execution id 1001 was already accepted (replay)` | 1 |
 | verify with a corrupt `ids.json` | `error: replay state ids.json is unreadable (...); refusing to verify against an unknown set of accepted executions` | 2 |
+| verify a policy with `max_amount` edited to 999999 | `REJECT: policy signature is not valid for this policy` | 1 |
+| `policy` with no `--authority-key` and no `--seed` | `error: policy: no authorisation key. Pass --authority-key <path> ...` | 2 |
+| `policy --seed 99` (demo path) | `warning: signing with DEMO seed 99. That key is reproducible ... forgeable by anyone` on stderr, policy still written | 0 |
+| `policy --seed 5 --authority-key auth.hex` | `error: the argument '--seed <SEED>' cannot be used with '--authority-key <AUTHORITY_KEY>'` | 2 |
 | verify with `execution_id: 0` | `REJECT: receipt has no execution id (0), so replay cannot be detected` | 1 |
 | verify an expired receipt | `REJECT: policy was expired at the receipt's completion time` | 1 |
 | prove with amount 400 (cap 300) | `error: policy rejected: action amount 400 exceeds per-action cap 300` | 2 |
