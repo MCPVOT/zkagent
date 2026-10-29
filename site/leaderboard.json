@@ -1,12 +1,29 @@
 {
   "repo": "MCPVOT/zkagent",
-  "generated_at": "2026-10-29T05:50:24Z",
-  "generated_pacific": "Oct 28, 2026 10:50 PM PDT",
-  "since": "2026-10-28T07:00:00Z",
+  "generated_at": "2026-10-29T15:14:58Z",
+  "generated_pacific": "Oct 29, 2026 08:14 AM PDT",
+  "since": "2026-10-29T07:00:00Z",
   "since_caption": "new since 12:00 AM Pacific (America/Los_Angeles)",
-  "today_total": 0,
+  "today_total": 1,
   "ranked_by": "merged_prs",
-  "merged_pr_total": 0,
+  "merged_pr_total": 1,
   "unattributed_prs": [],
-  "contributors": []
+  "contributors": [
+    {
+      "login": "MCPVOT",
+      "avatar_url": "https://github.com/MCPVOT.png?size=200",
+      "merged_prs": 1,
+      "issues_filed": 0,
+      "today_prs": 1,
+      "today_badge": "<span class=\"delta delta-up\" title=\"+1 new since 12:00 AM Pacific (America/Los_Angeles)\"><svg viewBox=\"0 0 10 9\" width=\"14\" height=\"12\" aria-label=\"up\"><polygon points=\"5,0 10,9 0,9\"/></svg>+1</span>",
+      "score": 1,
+      "first_contribution": "2026-10-29T13:57:17Z",
+      "last_contribution": "2026-10-29T13:57:17Z",
+      "pr_numbers": [
+        1
+      ],
+      "issue_numbers": [],
+      "rank": 1
+    }
+  ]
 }
