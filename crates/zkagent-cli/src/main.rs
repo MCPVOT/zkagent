@@ -131,6 +131,49 @@ enum Command {
         #[arg(long)]
         seen: Option<PathBuf>,
     },
+    /// Publish a bundle to a content-addressed block store.
+    ///
+    /// Hashes the four artifacts into a manifest and files each block under its
+    /// CID. Nothing is uploaded anywhere: point `--blocks` at a directory that a
+    /// node serves (`ipfs add -r`), and the CIDs are portable to any IPFS node.
+    Publish {
+        /// Key directory produced by `setup`.
+        #[arg(long)]
+        keys: PathBuf,
+        /// Signed policy file.
+        #[arg(long)]
+        policy: PathBuf,
+        /// Receipt file.
+        #[arg(long)]
+        receipt: PathBuf,
+        /// Proof artifact.
+        #[arg(long)]
+        proof: PathBuf,
+        /// Private actions (needed only to measure the circuit shape; never published).
+        #[arg(long)]
+        actions: PathBuf,
+        /// Where to write the manifest.
+        #[arg(long)]
+        out: PathBuf,
+        /// Directory to store the blocks in, one file per CID.
+        #[arg(long)]
+        blocks: PathBuf,
+    },
+    /// Verify a bundle by its manifest, fetching each artifact by CID.
+    VerifyBundle {
+        /// The manifest (attestation.json).
+        #[arg(long)]
+        manifest: PathBuf,
+        /// Directory holding the blocks.
+        #[arg(long)]
+        blocks: PathBuf,
+        /// The verifier's current time, for the future-dating check.
+        #[arg(long)]
+        now: Option<u64>,
+        /// Persistent set of accepted execution ids.
+        #[arg(long)]
+        seen: Option<PathBuf>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -222,6 +265,79 @@ fn run() -> Result<ExitCode, String> {
             Ok(ExitCode::SUCCESS)
         }
 
+        Command::Publish {
+            keys,
+            policy,
+            receipt,
+            proof,
+            actions,
+            out,
+            blocks,
+        } => {
+            let actions = zkagent_service::read_actions(&actions).map_err(|e| e.to_string())?;
+
+            let published =
+                zkagent_service::publish(&keys, &policy, &receipt, &proof, &actions, now_unix())
+                    .map_err(|e| e.to_string())?;
+
+            // File each block under its own CID. `put` recomputes the hash, so a
+            // block cannot be stored under a name it does not match.
+            let store = zkagent_ipfs::DirSource::new(&blocks);
+            for (cid, bytes) in &published.blocks {
+                let stored = store.put(bytes).map_err(|e| e.to_string())?;
+                if &stored != cid {
+                    return Err(format!(
+                        "internal: block {stored} does not match the manifest's {cid}"
+                    ));
+                }
+            }
+
+            zkagent_service::write_json(&out, &published.manifest).map_err(|e| e.to_string())?;
+
+            println!("manifest:  {}", out.display());
+            println!(
+                "blocks:    {} blocks in {}",
+                published.blocks.len(),
+                blocks.display()
+            );
+            println!("vk:        {}", published.manifest.circuit.vk.cid);
+            println!("policy:    {}", published.manifest.policy.cid);
+            println!("receipt:   {}", published.manifest.receipt.cid);
+            println!("proof:     {}", published.manifest.proof.cid);
+            println!(
+                "circuit:   {} constraints, {} public inputs, format v{}",
+                published.manifest.circuit.constraints,
+                published.manifest.circuit.public_inputs,
+                published.manifest.circuit.format_version
+            );
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::VerifyBundle {
+            manifest,
+            blocks,
+            now,
+            seen,
+        } => {
+            let manifest: zkagent_ipfs::AttestationManifest =
+                zkagent_service::read_json(&manifest).map_err(|e| e.to_string())?;
+            let store = zkagent_ipfs::DirSource::new(&blocks);
+
+            let outcome = zkagent_service::verify_bundle(&manifest, &store, now, seen.as_deref())
+                .map_err(|e| e.to_string())?;
+
+            match outcome.verdict {
+                Verdict::Accept => {
+                    println!("ACCEPT");
+                    Ok(ExitCode::SUCCESS)
+                }
+                Verdict::Reject(reason) => {
+                    println!("REJECT: {reason}");
+                    Ok(ExitCode::from(1))
+                }
+            }
+        }
+
         Command::Verify {
             keys,
             policy,
@@ -230,11 +346,11 @@ fn run() -> Result<ExitCode, String> {
             now,
             seen,
         } => {
+            // Not an error: expiry is enforced inside the circuit, so this only
+            // drops the future-dating check. But a verifier that forgets the flag
+            // should be told, rather than silently running with one fewer check
+            // than it believes it has.
             if now.is_none() {
-                // Not an error: expiry is enforced inside the circuit, so this
-                // only drops the future-dating check. But a verifier that
-                // forgets the flag should be told, rather than silently running
-                // with one fewer check than it believes it has.
                 eprintln!(
                     "warning: --now not supplied, so the future-dating check is skipped \
                      (the circuit still enforces completed_at < expires_at)"
@@ -261,4 +377,11 @@ fn run() -> Result<ExitCode, String> {
             }
         }
     }
+}
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }

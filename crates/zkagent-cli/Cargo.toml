@@ -19,5 +19,6 @@ zkagent-core = { path = "../zkagent-core", version = "0.1.0" }
 zkagent-proofs = { path = "../zkagent-proofs", version = "0.1.0" }
 zkagent-service = { path = "../zkagent-service", version = "0.1.0" }
 zkagent-verifier = { path = "../zkagent-verifier", version = "0.1.0" }
+zkagent-ipfs = { path = "../zkagent-ipfs", version = "0.1.0" }
 clap = { version = "4", features = ["derive"] }
 hex = "0.4"

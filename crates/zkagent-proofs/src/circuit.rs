@@ -54,7 +54,9 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_r1cs_std::fields::FieldVar;
 use ark_r1cs_std::uint::UInt;
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
+use ark_relations::r1cs::{
+    ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError,
+};
 
 use zkagent_core::{Action, Policy, Receipt, MAX_ACTIONS, MAX_POLICY_TARGETS};
 
@@ -380,6 +382,43 @@ pub fn public_inputs(policy: &Policy, receipt: &Receipt) -> Vec<CircuitField> {
     out
 }
 
+/// Why a circuit shape could not be measured.
+#[derive(Debug, thiserror::Error)]
+pub enum ShapeError {
+    /// The witness did not satisfy the circuit, or synthesis failed.
+    ///
+    /// Not a hypothetical: a witness outside the policy legitimately fails
+    /// synthesis, which is why the caller must be able to see the difference
+    /// between "no proof" and "cannot describe the proof".
+    #[error("synthesis failed: {0}")]
+    Synthesis(String),
+}
+
+/// Measure the constraint system for this exact policy, receipt and witness.
+///
+/// Returns `(constraints, public_inputs)`. This is how an attestation records
+/// circuit identity: measured from the same inputs the proof was made for, not
+/// copied from a document that can drift away from the code.
+///
+/// # Errors
+/// [`ShapeError::Synthesis`] if the witness does not satisfy the circuit — in
+/// which case there would be no proof to describe anyway.
+pub fn measure_shape(
+    policy: &Policy,
+    receipt: &Receipt,
+    actions: &[Action],
+) -> Result<(usize, usize), ShapeError> {
+    let cs = ConstraintSystem::<CircuitField>::new_ref();
+    build_circuit(policy, receipt, actions)
+        .generate_constraints(cs.clone())
+        .map_err(|e| ShapeError::Synthesis(e.to_string()))?;
+
+    // The ref exposes both counters directly; instance 0 is the constant `one`,
+    // so the public-input count is one less than the instance count.
+    let public_inputs = cs.num_instance_variables().saturating_sub(1);
+    Ok((cs.num_constraints(), public_inputs))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -642,5 +681,38 @@ mod tests {
         for slot in &c.policy.allowed_targets {
             assert!(p.permits_target(*slot), "padded slot {slot} is not allowed");
         }
+    }
+}
+
+#[cfg(test)]
+mod shape_tests {
+    use super::*;
+
+    #[test]
+    fn measure_shape_reports_the_shipped_shape() {
+        let policy = Policy::new(1_000, 300, 2_000, 1, vec![3, 7, 9]).unwrap();
+        let receipt = Receipt {
+            total_amount: 400,
+            action_count: 2,
+            completed_at: 1_500,
+            chain_id: 1,
+            execution_id: 1_001,
+        };
+        let actions = vec![
+            Action {
+                target: 3,
+                amount: 250,
+                trace_digest: 11,
+            },
+            Action {
+                target: 7,
+                amount: 150,
+                trace_digest: 22,
+            },
+        ];
+        let (constraints, public_inputs) = measure_shape(&policy, &receipt, &actions).unwrap();
+        println!("measured: {constraints} constraints, {public_inputs} public inputs");
+        assert_eq!(public_inputs, 15, "the arity the verifier expects");
+        assert!(constraints > 0);
     }
 }

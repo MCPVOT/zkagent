@@ -236,15 +236,6 @@ pub fn verify(
     seen: Option<&Path>,
 ) -> Result<VerifyOutcome, ServiceError> {
     let signed = read_signed_policy(policy_path)?;
-    let policy = signed
-        .policy
-        .to_policy()
-        .map_err(ServiceError::InvalidPolicy)?;
-    let pubkey = hex::decode(&signed.authority_pubkey)
-        .map_err(|e| ServiceError::malformed(policy_path, e))?;
-    let sig =
-        hex::decode(&signed.signature).map_err(|e| ServiceError::malformed(policy_path, e))?;
-
     let vk_bytes = fs::read(keys_dir.join("vk.bin"))
         .map_err(|e| ServiceError::io(keys_dir.join("vk.bin"), e))?;
 
@@ -255,6 +246,37 @@ pub fn verify(
         None => None,
     };
 
+    verify_with_vk(&vk_bytes, &signed, receipt, proof, now, state.as_mut())
+}
+
+/// Verify with the verifying key supplied as bytes, and the policy already parsed.
+///
+/// This is the shared core: the path-based [`verify`] reads files and calls it, and
+/// [`crate::bundle::verify_bundle`] fetches the same four artifacts by CID and calls
+/// it. One implementation of the replay gate and the verification steps, so a
+/// bundle-verified proof and a file-verified proof cannot diverge.
+///
+/// # Errors
+/// Returns [`ServiceError::InvalidPolicy`] for a policy that does not validate,
+/// [`ServiceError::Malformed`] for an undecodable key or signature, and
+/// [`ServiceError::Replay`] when the ledger cannot be read or written.
+pub fn verify_with_vk(
+    vk_bytes: &[u8],
+    signed: &SignedPolicyFile,
+    receipt: &Receipt,
+    proof: &ProofBytes,
+    now: Option<u64>,
+    mut state: Option<&mut SeenExecutions>,
+) -> Result<VerifyOutcome, ServiceError> {
+    let policy = signed
+        .policy
+        .to_policy()
+        .map_err(ServiceError::InvalidPolicy)?;
+    let pubkey = hex::decode(&signed.authority_pubkey)
+        .map_err(|e| ServiceError::Authority(format!("authority_pubkey is not hex: {e}")))?;
+    let sig = hex::decode(&signed.signature)
+        .map_err(|e| ServiceError::Authority(format!("signature is not hex: {e}")))?;
+
     if let Some(s) = &state {
         if s.contains(receipt.execution_id) {
             return Ok(VerifyOutcome {
@@ -264,7 +286,7 @@ pub fn verify(
         }
     }
 
-    let verdict = verify_proof(&vk_bytes, &policy, receipt, proof, &pubkey, &sig, now);
+    let verdict = verify_proof(vk_bytes, &policy, receipt, proof, &pubkey, &sig, now);
 
     if let Verdict::Accept = verdict {
         if let Some(s) = state.as_mut() {

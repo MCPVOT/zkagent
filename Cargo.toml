@@ -7,6 +7,7 @@ members = [
     "crates/zkagent-service",
     "crates/zkagent-cli",
     "crates/zkagent-mcp",
+    "crates/zkagent-ipfs",
 ]
 # The Tauri example is a standalone crate on purpose: it pulls the whole Tauri
 # dependency tree, which has no business in the core workspace's build.

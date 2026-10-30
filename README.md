@@ -90,9 +90,12 @@ to a public network. See `docs/ARCHITECTURE.md` §"Trusted setup".
 | `crates/zkagent-service` | **the four operations over files** — the layer an embedder uses |
 | `crates/zkagent-cli` | the `zkagent` command line (a thin shell over the service) |
 | `crates/zkagent-mcp` | an MCP server, so any agent harness can drive the same operations |
+| `crates/zkagent-ipfs` | content addressing: CIDv1 over artifacts, the bundle manifest, block sources |
 | `examples/tauri-plugin` | embedding zkagent in a Tauri v2 app |
 | `docs/ARCHITECTURE.md` | design, threat model, decisions, roadmap |
 | `docs/EMBEDDING.md` | how to embed it: plain Rust, Tauri, MCP, CLI |
+| `docs/IPFS.md` | content-addressed attestations: CIDs, the manifest, the threat model |
+| `docs/INFRASTRUCTURE.md` | which nodes exist and what each may be trusted with |
 | `docs/research/` | the cited research corpus this was built from |
 | `tools/loop.py` | the loop-learning ledger and its consumer |
 | `docs/loop-ledger.jsonl` | append-only record of what was tried and what happened |
@@ -147,6 +150,34 @@ assert!(outcome.accepted());
 See `docs/EMBEDDING.md` for the plain-Rust, Tauri, MCP and CLI paths, and for
 the rules a host inherits (no printing, no global state, no panics, fail-closed
 on unreadable state).
+
+## Content addressing (IPFS)
+
+A proof gives you soundness and privacy; it says nothing about whether the bytes
+you received are the bytes that were attested. Content addressing gives exactly
+that, and nothing more.
+
+```bash
+zkagent publish --keys keys/ --policy policy.json --receipt receipt.json \
+                --proof proof.json --actions actions.json \
+                --out attestation.json --blocks blocks/
+# vk:      bafkreibjyua75…
+# policy:  bafkreiedes63…
+# receipt: bafkreifupy33…
+# proof:   bafkreidyu7hu…
+# circuit: 3333 constraints, 15 public inputs, format v2
+
+zkagent verify-bundle --manifest attestation.json --blocks blocks/ --now 1600
+# ACCEPT
+```
+
+The manifest names all four artifacts by **CIDv1 (raw, sha2-256)**, and the
+verifying key's CID *is* the circuit identity — so a proof cannot be verified
+against a circuit other than the one it names. Every fetch is re-hashed: a
+gateway or a mirror that returns different bytes is refused, not trusted.
+
+The private witness is never published. See `docs/IPFS.md` for the threat model
+and for how to put the blocks on a real IPFS node.
 
 ## Contributing and governance
 
