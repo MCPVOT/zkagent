@@ -47,6 +47,28 @@ malformed verifying key, a permuted public-input vector, a wrong format version,
 a tampered policy, a receipt dated in the future, an execution id of zero. It
 must reject each one **by name** and never panic.
 
+### Tier 3b — the hostile transport (feature `gateway`)
+
+The block source is the one component the verifier does not control, so it gets
+its own tier, and the tests drive it over a real loopback HTTP server rather than
+a mock of the transport — the transport *is* the thing under test.
+`crates/zkagent-ipfs/tests/gateway.rs` and `crates/zkagent-service/tests/gateway.rs`
+assert that:
+
+- a gateway that returns different bytes of the **same length** is refused as an
+  integrity failure naming the artifact (a size check cannot catch this);
+- a substituted **verifying key** is refused before any proof is verified;
+- a 404 is `NotFound` and a 5xx is a transport failure — "could not verify" is
+  never reported as "verified false";
+- a path-like CID (`../etc/passwd`, an absolute URL) is rejected **before any
+  request leaves the process**, so a hostile manifest cannot become an SSRF;
+- a body larger than the block cap is refused without buffering it;
+- a genuine bundle, with a real Groth16 proof, verifies over HTTP and still
+  honours the replay gate.
+
+Both guards are mutation-verified: disabling the re-hash, or the CID path check,
+makes the corresponding tests fail. A test that cannot fail is documentation.
+
 ### Tier 4 — cross-verification (not implemented)
 
 A second, independent verifier — ideally in another language — consuming the
@@ -84,11 +106,18 @@ how a gate ends up proving nothing.
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-features
 cargo test --manifest-path examples/tauri-plugin/Cargo.toml
 python tools/leaderboard/test_generate.py
 ```
+
+**`--all-features` is not optional.** The `gateway` feature is off by default
+(a host that already holds its blocks should not carry an HTTP client and a TLS
+stack), and nothing in the workspace enables it. A plain `cargo test` therefore
+compiles `GatewaySource` — the untrusted-transport path — to nothing, and its
+tests silently vanish. CI runs `--all-features` for exactly that reason: a
+security-relevant path that no build compiles is a claim, not a mechanism.
 
 CI additionally runs the real binaries: the CLI exit-code contract, and a full
 MCP JSON-RPC round trip (setup → authorise → prove → verify → replay).

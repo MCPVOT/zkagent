@@ -41,6 +41,19 @@ pub enum SourceError {
     /// A transport error (feature `gateway`).
     #[error("transport: {0}")]
     Transport(String),
+
+    /// The block was larger than the source is willing to buffer.
+    ///
+    /// A hostile transport can answer with a body of any length. Without a cap,
+    /// "return 8 GiB" is a memory-exhaustion attack on the verifier, and the
+    /// manifest's size check never runs because the read dies first.
+    #[error("block {cid} exceeds the {limit}-byte limit for a single block")]
+    TooLarge {
+        /// The CID that was requested.
+        cid: String,
+        /// The cap that was exceeded.
+        limit: usize,
+    },
 }
 
 impl From<CidError> for SourceError {
@@ -197,7 +210,17 @@ impl BlockSource for DirSource {
 pub struct GatewaySource {
     base: String,
     timeout_secs: u64,
+    max_block_bytes: usize,
 }
+
+/// The largest single block a [`GatewaySource`] will buffer by default (64 MiB).
+///
+/// Every real artifact here is kilobytes; the cap exists so that a hostile
+/// gateway cannot turn "verify this proof" into "allocate unbounded memory".
+/// Hosts with larger artifacts can raise it with
+/// [`GatewaySource::with_max_block_bytes`].
+#[cfg(feature = "gateway")]
+pub const DEFAULT_MAX_BLOCK_BYTES: usize = 64 * 1024 * 1024;
 
 #[cfg(feature = "gateway")]
 impl GatewaySource {
@@ -207,6 +230,7 @@ impl GatewaySource {
         Self {
             base: base.into().trim_end_matches('/').to_string(),
             timeout_secs: 30,
+            max_block_bytes: DEFAULT_MAX_BLOCK_BYTES,
         }
     }
 
@@ -214,6 +238,17 @@ impl GatewaySource {
     #[must_use]
     pub fn with_timeout(mut self, secs: u64) -> Self {
         self.timeout_secs = secs;
+        self
+    }
+
+    /// Override how many bytes a single block may be.
+    ///
+    /// Raise this only if the artifacts being published are genuinely that
+    /// large: it is the bound on how much memory an untrusted gateway can make
+    /// the verifier allocate.
+    #[must_use]
+    pub fn with_max_block_bytes(mut self, bytes: usize) -> Self {
+        self.max_block_bytes = bytes;
         self
     }
 }
@@ -232,11 +267,21 @@ impl BlockSource for GatewaySource {
 
         match agent.get(&url).call() {
             Ok(response) => {
+                // Read one byte past the cap: if that byte exists, the block is
+                // over the limit, and buffering the rest would be the attack.
+                let cap = self.max_block_bytes as u64;
                 let mut bytes = Vec::new();
                 response
                     .into_reader()
+                    .take(cap.saturating_add(1))
                     .read_to_end(&mut bytes)
                     .map_err(|e| SourceError::Transport(format!("{url}: {e}")))?;
+                if bytes.len() as u64 > cap {
+                    return Err(SourceError::TooLarge {
+                        cid: cid.to_string(),
+                        limit: self.max_block_bytes,
+                    });
+                }
                 Ok(bytes)
             }
             Err(ureq::Error::Status(404, _)) => Err(SourceError::NotFound(cid.to_string())),

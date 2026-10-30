@@ -114,7 +114,16 @@ zkagent_service::verify_bundle(&manifest, &source, Some(now), None)?;
 ```
 
 `GatewaySource` requires the `gateway` feature and an HTTP client; the gateway is
-not trusted, which is why the re-hash exists.
+not trusted, which is why the re-hash exists. The read is also **bounded**: 64 MiB
+per block by default (`GatewaySource::with_max_block_bytes`), because an untrusted
+gateway can otherwise answer with an unbounded body and exhaust the verifier
+before the manifest's size check ever runs.
+
+This path is covered by `crates/zkagent-ipfs/tests/gateway.rs` and
+`crates/zkagent-service/tests/gateway.rs`, which drive a real HTTP server on
+loopback (a real Groth16 proof included, and no mock of the transport — the
+transport is the thing under test). CI builds and tests with `--all-features`,
+because a feature-gated path that nothing compiles is a claim, not a mechanism.
 
 ## What is published, and what is not
 
@@ -133,10 +142,11 @@ The private witness is used at publish time only to measure the circuit shape.
 
 | Attack | Outcome |
 |---|---|
-| a gateway returns different bytes | refused: re-hash mismatch |
+| a gateway returns different bytes | refused: re-hash mismatch, naming the artifact |
+| a gateway returns an unbounded body | refused: block size cap (64 MiB default) |
 | a block is truncated | refused: length mismatch, named by artifact |
 | a manifest from another circuit | refused: `format_version` mismatch |
-| a hostile manifest names a path (`../etc/passwd`) | refused: every CID is parsed before any fetch |
+| a hostile manifest names a path (`../etc/passwd`) | refused: every CID is parsed before any fetch, so no request leaves the process |
 | a valid bundle replayed | refused: `--seen` ledger (as with plain `verify`) |
 | wrong verifying key paired with a real proof | refused: the vk's CID is part of the manifest |
 

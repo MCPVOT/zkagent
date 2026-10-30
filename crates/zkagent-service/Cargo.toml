@@ -20,5 +20,13 @@ serde_json = "1"
 hex = "0.4"
 thiserror = "2"
 
+[features]
+default = []
+# Forwards to `zkagent-ipfs/gateway`: enables `GatewaySource`, so a verifier with
+# no IPFS node can fetch a bundle by CID over HTTPS. Off by default, because a
+# host that already holds its blocks should not carry an HTTP client and a TLS
+# stack. `cargo test --all-features` compiles and tests it.
+gateway = ["zkagent-ipfs/gateway"]
+
 [dev-dependencies]
 tempfile = "3"
