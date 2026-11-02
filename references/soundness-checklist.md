@@ -83,8 +83,10 @@ negative per constraint, end-to-end through the service layer, and hostile
 artifacts. Those tests may never be skipped, because they are the tests whose
 absence lets an unsound circuit ship green.
 
-**Tier 4 — cross-verification — is not implemented.** Until a second,
-independent verifier (ideally in another language) consumes the same
-artifacts, the claim "this proof verifies" rests on one implementation. That
-is a known, documented limitation, not a hidden one, and it is the strongest
-argument for keeping the soundness gate high before publication.
+**Tier 4 — cross-verification — is implemented in one direction.** `snarkjs`
+(JavaScript) verifies our Groth16/BN254 proofs after a serialization conversion,
+and refuses a tampered public input, proof coordinate or verifying-key entry:
+`python tools/crossverify/run.py`, run in CI on ubuntu. What that does not cover:
+`snarkjs` itself is not proven correct, a second *language* (gnark/Go) is still
+absent, and the trusted setup is untouched by any of it. Two implementations
+agreeing is one fewer reason to doubt us, not a soundness proof.

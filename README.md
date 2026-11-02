@@ -109,6 +109,8 @@ to a public network. See `docs/ARCHITECTURE.md` §"Trusted setup".
 | `docs/ARCHITECTURE.md` | design, threat model, decisions, roadmap |
 | `docs/EMBEDDING.md` | how to embed it: plain Rust, Tauri, MCP, CLI |
 | `docs/IPFS.md` | content-addressed attestations: CIDs, the manifest, the threat model |
+| `docs/CROSSVERIFY.md` | Tier 4: an independent implementation (`snarkjs`) verifies our proofs |
+| `examples/crossverify` | the exporter that puts our artifacts in the standard Groth16/BN254 shape |
 | `docs/INFRASTRUCTURE.md` | which nodes exist and what each may be trusted with |
 | `docs/research/` | the cited research corpus this was built from |
 | `tools/loop.py` | the loop-learning ledger and its consumer |

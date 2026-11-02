@@ -69,11 +69,22 @@ assert that:
 Both guards are mutation-verified: disabling the re-hash, or the CID path check,
 makes the corresponding tests fail. A test that cannot fail is documentation.
 
-### Tier 4 — cross-verification (not implemented)
+### Tier 4 — cross-verification (implemented, one direction)
 
-A second, independent verifier — ideally in another language — consuming the
-same artifacts. Until it exists, the claim "this proof verifies" rests on one
-implementation.
+A second, independent verifier consuming the same artifacts. `tools/crossverify/run.py`
+drives a real execution, converts the verifying key, proof and public inputs to the
+standard Groth16/BN254 shape, and requires **`snarkjs`** to accept the honest proof
+and refuse four mutations (a public input, a proof coordinate, a verifying-key
+entry, a zeroed input). It runs in CI on ubuntu, because it needs node.
+
+What that buys and what it does not: it proves our artifacts are standard rather
+than arkworks-specific, and that a foreign implementation rejects tampering too.
+It does **not** prove `snarkjs` correct, and it says nothing about the trusted
+setup. Two independent verifiers agreeing is one fewer reason to doubt us, not a
+soundness proof. See `docs/CROSSVERIFY.md`.
+
+Not yet done: a second **language** (gnark/Go), and committed conformance vectors —
+the second would let anybody check any implementation with no access to our keys.
 
 ## Tests that may NEVER be skipped
 
