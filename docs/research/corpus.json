@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "note": "The corpus manifest. One entry per report in docs/research/, and the only machine-readable statement of what the corpus contains. `as_of` is the date the sources were read; where a report states no date, it is the date the report entered the repository (git --diff-filter=A). `sources_checked` is the last date a human or agent re-opened the cited URLs. Checked by tools/research/check.py in CI.",
+  "documents": [
+    {
+      "id": "01",
+      "path": "01-proving-stack-landscape.md",
+      "title": "Rust ZK proving-system landscape",
+      "as_of": "2026-10-27",
+      "status": "current",
+      "slices": ["proving-stack"],
+      "sources_checked": "2026-10-27"
+    },
+    {
+      "id": "02",
+      "path": "02-agent-human-security-primitive.md",
+      "title": "The agent/human security primitive",
+      "as_of": "2026-10-27",
+      "status": "current",
+      "slices": ["protocol-shape", "prior-art"],
+      "sources_checked": "2026-10-27"
+    },
+    {
+      "id": "03",
+      "path": "03-ecosystem-intel.md",
+      "title": "Ecosystem and community intelligence",
+      "as_of": "2026-10-27",
+      "status": "current",
+      "slices": ["ecosystem", "funding"],
+      "sources_checked": "2026-10-27"
+    },
+    {
+      "id": "04",
+      "path": "04-rust-repo-audit.md",
+      "title": "Rust / ZK library reuse audit (build vs buy)",
+      "as_of": "2026-10-28",
+      "status": "current",
+      "slices": ["reusable-code"],
+      "sources_checked": "2026-10-28"
+    },
+    {
+      "id": "05",
+      "path": "05-rust-implementation-design.md",
+      "title": "Rust implementation design spec",
+      "as_of": "2026-10-27",
+      "status": "current",
+      "slices": ["implementation"],
+      "sources_checked": "2026-10-27",
+      "notes": "Numbers measured on an arkworks 0.6.0 probe tree; the shipped circuit is 3 333 constraints / 15 public inputs, not the 2 162 / 9 recorded here."
+    },
+    {
+      "id": "06",
+      "path": "06-zk-attestation-literature.md",
+      "title": "What the ZK attestation literature actually proves",
+      "as_of": "2026-10-28",
+      "status": "current",
+      "slices": ["literature"],
+      "sources_checked": "2026-10-28"
+    },
+    {
+      "id": "07",
+      "path": "07-zkml-zkvm-systems.md",
+      "title": "zkML and zkVM systems",
+      "as_of": "2026-10-28",
+      "status": "current",
+      "slices": ["zkml", "zkvm"],
+      "sources_checked": "2026-10-28"
+    },
+    {
+      "id": "08",
+      "path": "08-a2a-protocols-and-trust.md",
+      "title": "Agent-to-agent interoperability and trust",
+      "as_of": "2026-10-28",
+      "status": "current",
+      "slices": ["a2a", "interop"],
+      "sources_checked": "2026-10-28"
+    },
+    {
+      "id": "09",
+      "path": "09-a2h-delegation-revocation.md",
+      "title": "A2H: verifiable delegation, revocation and accountability",
+      "as_of": "2026-10-28",
+      "status": "current",
+      "slices": ["delegation", "revocation"],
+      "sources_checked": "2026-10-28",
+      "notes": "Constraint costs measured on an arkworks 0.6.0 probe tree, not the pinned 0.5.x; re-measure before budgeting."
+    }
+  ]
+}

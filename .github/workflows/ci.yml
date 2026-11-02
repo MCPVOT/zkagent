@@ -57,6 +57,18 @@ jobs:
           [ -n "$PY" ] || { echo "FAIL: no python on PATH"; exit 1; }
           "$PY" tools/leaderboard/test_generate.py
 
+      # The research corpus is the evidence ARCHITECTURE.md leans on. 400 KB of
+      # cited markdown rots quietly: a renamed report, an unlisted slice, a date
+      # that is not a date. Stdlib only, same reason as the leaderboard check.
+      - name: check the research corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          PY="$(command -v python || command -v python3)"
+          [ -n "$PY" ] || { echo "FAIL: no python on PATH"; exit 1; }
+          "$PY" tools/research/test_check.py
+          "$PY" tools/research/check.py
+
       - name: release build
         run: cargo build --release
 
