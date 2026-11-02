@@ -8,3 +8,5 @@ receipt.json
 actions.json
 bad_*.json
 Cargo.lock.bak
+__pycache__/
+*.pyc
