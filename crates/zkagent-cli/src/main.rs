@@ -38,6 +38,12 @@ use zkagent_service::{AuthorityKey, PolicySpec, Verdict};
                   without revealing which actions it took."
 )]
 struct Cli {
+    /// Emit a machine-readable JSON document instead of the human line.
+    ///
+    /// A verdict is a decision an agent acts on, so it must not require parsing
+    /// English. Exit codes are unchanged: 0 accept, 1 reject, 2 could not verify.
+    #[arg(long, global = true)]
+    json: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -188,6 +194,7 @@ fn main() -> ExitCode {
 
 fn run() -> Result<ExitCode, String> {
     let cli = Cli::parse();
+    let json_out = cli.json;
     match cli.command {
         Command::Setup { seed, out } => {
             let outcome = zkagent_service::setup(&out, seed).map_err(|e| e.to_string())?;
@@ -326,16 +333,7 @@ fn run() -> Result<ExitCode, String> {
             let outcome = zkagent_service::verify_bundle(&manifest, &store, now, seen.as_deref())
                 .map_err(|e| e.to_string())?;
 
-            match outcome.verdict {
-                Verdict::Accept => {
-                    println!("ACCEPT");
-                    Ok(ExitCode::SUCCESS)
-                }
-                Verdict::Reject(reason) => {
-                    println!("REJECT: {reason}");
-                    Ok(ExitCode::from(1))
-                }
-            }
+            Ok(emit_verdict(json_out, &outcome.verdict, None))
         }
 
         Command::Verify {
@@ -365,17 +363,51 @@ fn run() -> Result<ExitCode, String> {
                 zkagent_service::verify(&keys, &policy, &receipt, &proof, now, seen.as_deref())
                     .map_err(|e| e.to_string())?;
 
-            match outcome.verdict {
-                Verdict::Accept => {
-                    println!("ACCEPT");
-                    Ok(ExitCode::SUCCESS)
-                }
-                Verdict::Reject(reason) => {
-                    println!("REJECT: {reason}");
-                    Ok(ExitCode::from(1))
-                }
-            }
+            Ok(emit_verdict(
+                json_out,
+                &outcome.verdict,
+                Some(receipt.execution_id),
+            ))
         }
+    }
+}
+
+/// Prints the verdict the caller asked for and returns the matching exit code.
+///
+/// The exit codes are the original contract — 0 accept, 1 reject — so a shell
+/// script that predates `--json` keeps working. The JSON document adds the stable
+/// `reason_code`, the execution it is about, and the artifact format, because a
+/// harness must not have to parse English to decide what to do next.
+fn emit_verdict(json_out: bool, verdict: &Verdict, execution_id: Option<u64>) -> ExitCode {
+    let accepted = matches!(verdict, Verdict::Accept);
+    match (json_out, verdict) {
+        (true, Verdict::Accept) => println!(
+            "{}",
+            serde_json::json!({
+                "verdict": "accept",
+                "reason_code": serde_json::Value::Null,
+                "reason": serde_json::Value::Null,
+                "execution_id": execution_id,
+                "format": zkagent_proofs::prover::FORMAT_VERSION,
+            })
+        ),
+        (true, Verdict::Reject(reason)) => println!(
+            "{}",
+            serde_json::json!({
+                "verdict": "reject",
+                "reason_code": reason.code(),
+                "reason": reason.to_string(),
+                "execution_id": execution_id,
+                "format": zkagent_proofs::prover::FORMAT_VERSION,
+            })
+        ),
+        (false, Verdict::Accept) => println!("ACCEPT"),
+        (false, Verdict::Reject(reason)) => println!("REJECT: {reason}"),
+    }
+    if accepted {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
     }
 }
 

@@ -372,13 +372,18 @@ fn tool_verify(args: &Value) -> Result<Value, RpcError> {
         message: e.to_string(),
     })?;
 
-    let (accepted, reason) = match &outcome.verdict {
-        zkagent_verifier::Verdict::Accept => (true, Value::Null),
-        zkagent_verifier::Verdict::Reject(r) => (false, Value::String(r.to_string())),
+    let (accepted, reason_code, reason) = match &outcome.verdict {
+        zkagent_verifier::Verdict::Accept => (true, Value::Null, Value::Null),
+        zkagent_verifier::Verdict::Reject(r) => (
+            false,
+            Value::String(r.code().to_string()),
+            Value::String(r.to_string()),
+        ),
     };
 
     Ok(ok(json!({
         "accepted": accepted,
+        "reason_code": reason_code,
         "reason": reason,
         "recorded_execution_id": outcome.recorded,
         "replay_state": seen_path.map(|p| p.display().to_string())

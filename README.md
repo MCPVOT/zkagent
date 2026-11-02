@@ -70,7 +70,21 @@ cargo run -- prove --keys keys/ --policy policy.json \
 cargo run -- verify --keys keys/ --policy policy.json \
   --receipt receipt.json --proof proof.json --now 1600
 # -> ACCEPT   (exit 0; REJECT prints the reason and exits 1)
+
+# 4b. or ask for a machine-readable verdict
+cargo run -- verify --json --keys keys/ --policy policy.json \
+  --receipt receipt.json --proof proof.json --now 1600
+# -> {"verdict":"accept","reason_code":null,"reason":null,
+#     "execution_id":1001,"format":2}
 ```
+
+`--json` keeps the exit codes (0 accept, 1 reject, 2 could not verify) and adds
+the two fields a harness branches on: a stable `verdict` and, on a rejection, a
+stable `reason_code` — `public_input_mismatch`, `unauthorised_policy`,
+`chain_mismatch`, `expired`, `missing_execution_id`, `already_accepted`,
+`invalid_proof`, `malformed_proof`, `format_mismatch`. The prose `reason` stays
+beside it for humans. `REJECT` remains the default output; nothing that parsed
+the old line changes.
 
 ## ⚠ Trusted setup
 

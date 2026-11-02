@@ -1800,6 +1800,8 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "hex",
+ "serde_json",
+ "tempfile",
  "zkagent-core",
  "zkagent-ipfs",
  "zkagent-proofs",
