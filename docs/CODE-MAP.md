@@ -33,9 +33,19 @@ interfaces point inward, never the other way.
 
 ## Targets (debt, reported every run)
 
+**None right now.** Both debts the first version of this map named have been paid:
+the verifier stopped carrying the prover (see below), and the shells now import
+from `zkagent-service` alone.
+
+```text
+$ python tools/arch/check.py
+OK: invariants hold        # no NOTE lines
 ```
-shell -> zkagent-service only
-```
+
+The shell rule is worth stating plainly because the crate count barely moved:
+`zkagent-cli` 311 → 308, `zkagent-mcp` 309 → 307, since the service legitimately
+needs the prover for `prove`. The win is that a format detail now has **one import
+site** instead of three, and the edge is enforced rather than remembered.
 
 ## Paid off: the verifier no longer carries the prover
 

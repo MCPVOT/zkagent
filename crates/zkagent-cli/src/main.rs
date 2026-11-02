@@ -289,7 +289,7 @@ fn run() -> Result<ExitCode, String> {
 
             // File each block under its own CID. `put` recomputes the hash, so a
             // block cannot be stored under a name it does not match.
-            let store = zkagent_ipfs::DirSource::new(&blocks);
+            let store = zkagent_service::DirSource::new(&blocks);
             for (cid, bytes) in &published.blocks {
                 let stored = store.put(bytes).map_err(|e| e.to_string())?;
                 if &stored != cid {
@@ -326,9 +326,9 @@ fn run() -> Result<ExitCode, String> {
             now,
             seen,
         } => {
-            let manifest: zkagent_ipfs::AttestationManifest =
+            let manifest: zkagent_service::AttestationManifest =
                 zkagent_service::read_json(&manifest).map_err(|e| e.to_string())?;
-            let store = zkagent_ipfs::DirSource::new(&blocks);
+            let store = zkagent_service::DirSource::new(&blocks);
 
             let outcome = zkagent_service::verify_bundle(&manifest, &store, now, seen.as_deref())
                 .map_err(|e| e.to_string())?;
@@ -356,7 +356,7 @@ fn run() -> Result<ExitCode, String> {
             }
 
             let receipt = zkagent_service::read_receipt(&receipt).map_err(|e| e.to_string())?;
-            let proof: zkagent_proofs::prover::ProofBytes =
+            let proof: zkagent_service::ProofBytes =
                 zkagent_service::read_json(&proof).map_err(|e| e.to_string())?;
 
             let outcome =
@@ -388,7 +388,7 @@ fn emit_verdict(json_out: bool, verdict: &Verdict, execution_id: Option<u64>) ->
                 "reason_code": serde_json::Value::Null,
                 "reason": serde_json::Value::Null,
                 "execution_id": execution_id,
-                "format": zkagent_proofs::prover::FORMAT_VERSION,
+                "format": zkagent_service::FORMAT_VERSION,
             })
         ),
         (true, Verdict::Reject(reason)) => println!(
@@ -398,7 +398,7 @@ fn emit_verdict(json_out: bool, verdict: &Verdict, execution_id: Option<u64>) ->
                 "reason_code": reason.code(),
                 "reason": reason.to_string(),
                 "execution_id": execution_id,
-                "format": zkagent_proofs::prover::FORMAT_VERSION,
+                "format": zkagent_service::FORMAT_VERSION,
             })
         ),
         (false, Verdict::Accept) => println!("ACCEPT"),

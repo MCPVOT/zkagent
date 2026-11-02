@@ -50,12 +50,15 @@ INVARIANTS: list[tuple[str, str]] = [
     ("zkagent-verifier", "not zkagent-service"),  # the verifier has no host state
     ("zkagent-verifier", "not zkagent-proofs"),   # and it does not carry the prover
     ("zkagent-service", "not shell"),             # the service must not own a shell
+    ("shell", "service-only"),                    # a shell talks to the service, nothing deeper
 ]
 
 # Known debt. Reported, never failed, until the commit that removes it.
-TARGETS: list[tuple[str, str]] = [
-    ("shell", "service-only"),
-]
+#
+# Empty since the shells were pointed at the service's re-exports. When the next
+# piece of debt appears, add it here rather than in a comment: a target that is
+# printed on every run is a target somebody will eventually pay.
+TARGETS: list[tuple[str, str]] = []
 
 
 def deps_of(crate: str) -> list[str]:

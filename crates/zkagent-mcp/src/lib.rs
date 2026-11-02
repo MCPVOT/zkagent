@@ -352,8 +352,8 @@ fn tool_verify(args: &Value) -> Result<Value, RpcError> {
         code: -32000,
         message: e.to_string(),
     })?;
-    let proof: zkagent_proofs::prover::ProofBytes = zkagent_service::read_json(&proof_path)
-        .map_err(|e| RpcError {
+    let proof: zkagent_service::ProofBytes =
+        zkagent_service::read_json(&proof_path).map_err(|e| RpcError {
             code: -32000,
             message: e.to_string(),
         })?;
@@ -373,8 +373,8 @@ fn tool_verify(args: &Value) -> Result<Value, RpcError> {
     })?;
 
     let (accepted, reason_code, reason) = match &outcome.verdict {
-        zkagent_verifier::Verdict::Accept => (true, Value::Null, Value::Null),
-        zkagent_verifier::Verdict::Reject(r) => (
+        zkagent_service::Verdict::Accept => (true, Value::Null, Value::Null),
+        zkagent_service::Verdict::Reject(r) => (
             false,
             Value::String(r.code().to_string()),
             Value::String(r.to_string()),

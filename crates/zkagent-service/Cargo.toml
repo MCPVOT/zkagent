@@ -12,6 +12,7 @@ categories = ["cryptography", "authentication"]
 
 [dependencies]
 zkagent-core = { path = "../zkagent-core", version = "0.1.0" }
+zkagent-wire = { path = "../zkagent-wire", version = "0.1.0" }
 zkagent-proofs = { path = "../zkagent-proofs", version = "0.1.0" }
 zkagent-verifier = { path = "../zkagent-verifier", version = "0.1.0" }
 zkagent-ipfs = { path = "../zkagent-ipfs", version = "0.1.0" }
