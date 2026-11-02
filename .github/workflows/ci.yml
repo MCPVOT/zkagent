@@ -102,6 +102,18 @@ jobs:
           "$PY" tools/research/test_check.py
           "$PY" tools/research/check.py
 
+      # Layering erodes one `use` at a time. docs/CODE-MAP.md names the intended
+      # edges; this makes the invariants (core/ipfs depend on nothing, no state or
+      # interface pointing outward) fail the build and reports the debt instead of
+      # letting it live in memory.
+      - name: check the crate graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          PY="$(command -v python || command -v python3)"
+          "$PY" tools/arch/test_check.py
+          "$PY" tools/arch/check.py
+
       - name: cross-verification tests (conversion shape, no node needed)
         shell: bash
         run: |
