@@ -158,7 +158,7 @@ jobs:
 
           WORK="$(mktemp -d)"
           cd "$WORK"
-          printf '%s\n' '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001}' > receipt.json
+          printf '%s\n' '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001,"trace_root":"0000000000000000000000000000000000000000000000000000000000000000"}' > receipt.json
           printf '%s\n' '[{"target":3,"amount":250,"trace_digest":11},{"target":7,"amount":150,"trace_digest":22}]' > actions.json
 
           cat <<'JSON' | "$MCP" > mcp.out
@@ -203,7 +203,7 @@ jobs:
           "$BIN" setup --seed 7 --out keys/ || exit 1
           "$BIN" policy --max-amount 1000 --max-per-action 300 --expires-at 2000 \
             --chain-id 1 --targets 3,7,9 --authority-key authority.hex --out policy.json || exit 1
-          printf '%s\n' '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":9001}' > receipt.json
+          printf '%s\n' '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":9001,"trace_root":"0000000000000000000000000000000000000000000000000000000000000000"}' > receipt.json
           printf '%s\n' '[{"target":3,"amount":250,"trace_digest":11},{"target":7,"amount":150,"trace_digest":22}]' > actions.json
           "$BIN" prove --keys keys/ --policy policy.json --receipt receipt.json \
             --actions actions.json --out proof.json || exit 1
@@ -220,7 +220,7 @@ jobs:
           names=$(ls blocks/ | grep -c '^bafkrei' || true)
           [ "$names" -eq 4 ] || { echo "FAIL: block names are not CIDv1 raw base32 ($names/4)"; fail=1; }
           # The measured circuit identity must be recorded, not copied.
-          grep -q '"public_inputs": 15' attestation.json || { echo "FAIL: manifest lacks the measured arity"; fail=1; }
+          grep -q '"public_inputs": 16' attestation.json || { echo "FAIL: manifest lacks the measured arity"; fail=1; }
 
           # 2. verify from the manifest alone: must accept.
           "$BIN" verify-bundle --manifest attestation.json --blocks blocks/ --now 1600 || rc=$?
@@ -253,7 +253,7 @@ jobs:
           "$BIN" setup --seed 7 --out keys/ || exit 1
           "$BIN" policy --max-amount 1000 --max-per-action 300 --expires-at 2000 \
             --chain-id 1 --targets 3,7,9 --authority-key auth.hex --out policy.json || exit 1
-          printf '%s\n' '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001}' > receipt.json
+          printf '%s\n' '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001,"trace_root":"0000000000000000000000000000000000000000000000000000000000000000"}' > receipt.json
           printf '%s\n' '[{"target":3,"amount":250,"trace_digest":11},{"target":7,"amount":150,"trace_digest":22}]' > actions.json
           "$BIN" prove --keys keys/ --policy policy.json --receipt receipt.json \
             --actions actions.json --out proof.json || exit 1
@@ -273,7 +273,10 @@ jobs:
           [ "$rc" -eq 0 ] || { echo "FAIL: honest receipt was not accepted (exit $rc)"; fail=1; }
 
           # 2. replay with a bumped execution id must REJECT (exit 1)
-          sed 's/"execution_id":1001/"execution_id":1002/' receipt.json > receipt2.json
+          # The prover rewrites receipt.json pretty-printed (it fills in the
+          # trace root), so match the pretty form, not the compact fixture.
+          sed 's/"execution_id": 1001/"execution_id": 1002/' receipt.json > receipt2.json
+          grep -q '"execution_id": 1002' receipt2.json || { echo "FAIL: receipt2 was not rewritten"; fail=1; }
           rc=0
           "$BIN" verify --keys keys/ --policy policy.json --receipt receipt2.json \
             --proof proof.json --now 1600 || rc=$?

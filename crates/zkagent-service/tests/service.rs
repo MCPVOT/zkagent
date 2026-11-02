@@ -35,6 +35,7 @@ fn receipt() -> Receipt {
         completed_at: 1_500,
         chain_id: 1,
         execution_id: 1_001,
+        trace_root: [0u8; 32],
     }
 }
 
@@ -70,12 +71,19 @@ fn full_flow(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
 
     fs::write(
         &receipt_path,
-        r#"{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001}"#,
+        r#"{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001,"trace_root":"0000000000000000000000000000000000000000000000000000000000000000"}"#,
     )
     .expect("write receipt");
 
-    let proof = prove(&keys, &policy_path, &receipt(), &actions()).expect("prove");
-    zkagent_service::write_json(&proof_path, &proof).expect("write proof");
+    let proven = prove(&keys, &policy_path, &receipt(), &actions()).expect("prove");
+    zkagent_service::write_json(&proof_path, &proven.proof).expect("write proof");
+    // The prover fills in the trace root; publish the receipt it returned so the
+    // file on disk is the one the proof commits to.
+    zkagent_service::write_json(
+        &receipt_path,
+        &zkagent_service::ReceiptJson::from(&proven.receipt),
+    )
+    .expect("write receipt");
 
     (keys, policy_path, receipt_path, proof_path)
 }

@@ -9,6 +9,7 @@
 #![deny(unsafe_code)]
 
 pub mod circuit;
+pub mod merkle;
 pub mod prover;
 
 pub use circuit::{build_circuit, public_inputs, CircuitField, PolicyConformanceCircuit};

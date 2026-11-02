@@ -154,7 +154,7 @@ pub fn prove_execution(
     actions_path: String,
     proof_path: String,
 ) -> CommandResult {
-    let receipt = match zkagent_service::read_receipt(&PathBuf::from(receipt_path)) {
+    let receipt = match zkagent_service::read_receipt(&PathBuf::from(&receipt_path)) {
         Ok(r) => r,
         Err(e) => return CommandResult::err(e.to_string()),
     };
@@ -169,15 +169,25 @@ pub fn prove_execution(
         &receipt,
         &actions,
     ) {
-        Ok(proof) => {
-            if let Err(e) = zkagent_service::write_json(&PathBuf::from(&proof_path), &proof) {
+        Ok(proven) => {
+            if let Err(e) = zkagent_service::write_json(&PathBuf::from(&proof_path), &proven.proof) {
+                return CommandResult::err(e.to_string());
+            }
+            // The prover completes the receipt with the trace root over the
+            // private digests; the proof's public inputs commit to it, so the
+            // file on disk must carry it too.
+            if let Err(e) = zkagent_service::write_json(
+                &PathBuf::from(&receipt_path),
+                &zkagent_service::ReceiptJson::from(&proven.receipt),
+            ) {
                 return CommandResult::err(e.to_string());
             }
             CommandResult::ok(
                 "proof written".to_string(),
                 Some(serde_json::json!({
-                    "public_inputs": proof.public_inputs,
-                    "proof_bytes": proof.proof.len(),
+                    "public_inputs": proven.proof.public_inputs,
+                    "proof_bytes": proven.proof.proof.len(),
+                    "trace_root": proven.receipt.trace_root.iter().map(|b| format!("{b:02x}")).collect::<String>(),
                 })),
             )
         }

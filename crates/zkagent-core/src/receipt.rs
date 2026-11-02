@@ -5,10 +5,62 @@
 //! policy. The agent's private trace is *not* here; it lives in the proof's
 //! witness.
 
+use serde::{Deserialize, Serialize};
+
 use crate::policy::Policy;
 
 /// Domain separator for execution receipts.
 pub const RECEIPT_DOMAIN: &str = "zkagent.receipt.v1";
+
+/// Bytes in a trace root: one BN254 scalar, little-endian.
+///
+/// Not truncated to 64 bits on purpose. A 64-bit root gives roughly 2^32
+/// collision work, which is well inside a determined attacker's budget; the full
+/// field element is what makes "these are the actions behind the proof" worth
+/// anything.
+pub const TRACE_ROOT_BYTES: usize = 32;
+
+/// Serde for a trace root: a 64-character lowercase hex string.
+///
+/// The bytes are the field element's canonical little-endian encoding, matching
+/// `CircuitField::from_le_bytes_mod_order` on the verifier's side. Parsing is
+/// strict — wrong length or non-hex is an error, never a panic — because this
+/// field arrives from untrusted JSON.
+pub mod trace_root_hex {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    use super::TRACE_ROOT_BYTES;
+
+    /// Writes the root as lowercase hex.
+    ///
+    /// # Errors
+    /// Propagates the serializer's own error.
+    pub fn serialize<S: Serializer>(
+        root: &[u8; TRACE_ROOT_BYTES],
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&hex::encode(root))
+    }
+
+    /// Reads a root from a 64-character hex string.
+    ///
+    /// # Errors
+    /// Returns a deserialisation error when the value is not a string, is not
+    /// hex, or does not decode to exactly [`TRACE_ROOT_BYTES`] bytes.
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<[u8; TRACE_ROOT_BYTES], D::Error> {
+        let text = String::deserialize(d)?;
+        let bytes = hex::decode(text.trim()).map_err(serde::de::Error::custom)?;
+        <[u8; TRACE_ROOT_BYTES]>::try_from(bytes.as_slice()).map_err(|_| {
+            serde::de::Error::custom(format!(
+                "trace_root must be {TRACE_ROOT_BYTES} bytes ({} hex characters), got {} bytes",
+                TRACE_ROOT_BYTES * 2,
+                bytes.len()
+            ))
+        })
+    }
+}
 
 /// A single action taken by the agent.
 ///
@@ -27,7 +79,7 @@ pub struct Action {
 }
 
 /// The public result of an agent execution.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Receipt {
     /// Total value moved across all actions.
     pub total_amount: u64,
@@ -46,12 +98,25 @@ pub struct Receipt {
     /// seen (see `Receipt::is_replay`) and must refuse `0`, which is reserved
     /// as "unset".
     pub execution_id: u64,
+    /// Merkle root over the padded per-action `trace_digest` leaves.
+    ///
+    /// This is the field that ties the proof to *this* execution rather than to
+    /// some execution with the same totals: the circuit rebuilds the tree from
+    /// the private digests and constrains the result to equal this public root.
+    /// The bytes are the BN254 scalar's little-endian encoding; see
+    /// [`trace_root_hex`] for the JSON form.
+    #[serde(with = "trace_root_hex")]
+    pub trace_root: [u8; TRACE_ROOT_BYTES],
 }
 
 impl Receipt {
     /// Canonical byte encoding of the receipt.
+    ///
+    /// The trace root is included: two executions with identical totals but
+    /// different private digests are different executions, and an encoding that
+    /// hid that would be lying about which one it describes.
     pub fn canonical_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(48);
+        let mut out = Vec::with_capacity(48 + TRACE_ROOT_BYTES);
         out.extend_from_slice(RECEIPT_DOMAIN.as_bytes());
         out.push(0u8);
         out.extend_from_slice(&self.total_amount.to_be_bytes());
@@ -59,6 +124,7 @@ impl Receipt {
         out.extend_from_slice(&self.completed_at.to_be_bytes());
         out.extend_from_slice(&self.chain_id.to_be_bytes());
         out.extend_from_slice(&self.execution_id.to_be_bytes());
+        out.extend_from_slice(&self.trace_root);
         out
     }
 
@@ -184,6 +250,7 @@ mod tests {
             completed_at: 500,
             chain_id: 1,
             execution_id: 1,
+            trace_root: [0u8; 32],
         };
         assert!(r.check_against(&policy()).is_ok());
     }
@@ -196,6 +263,7 @@ mod tests {
             completed_at: 500,
             chain_id: 1,
             execution_id: 1,
+            trace_root: [0u8; 32],
         };
         let v = r.check_against(&policy()).unwrap_err();
         assert!(v.contains(&ReceiptViolation::TotalExceedsPolicy {
@@ -212,6 +280,7 @@ mod tests {
             completed_at: 500,
             chain_id: 999,
             execution_id: 1,
+            trace_root: [0u8; 32],
         };
         let v = r.check_against(&policy()).unwrap_err();
         assert!(v.contains(&ReceiptViolation::ChainMismatch {
@@ -228,6 +297,7 @@ mod tests {
             completed_at: 1_000,
             chain_id: 1,
             execution_id: 1,
+            trace_root: [0u8; 32],
         };
         let v = r.check_against(&policy()).unwrap_err();
         assert!(v.contains(&ReceiptViolation::Expired {
@@ -246,9 +316,58 @@ mod tests {
             completed_at: 500,
             chain_id: 1,
             execution_id: 0,
+            trace_root: [0u8; 32],
         };
         let v = r.check_against(&policy()).unwrap_err();
         assert!(v.contains(&ReceiptViolation::MissingExecutionId));
+    }
+
+    fn receipt_with_root() -> Receipt {
+        let mut r = Receipt {
+            total_amount: 10,
+            action_count: 1,
+            completed_at: 500,
+            chain_id: 1,
+            execution_id: 7,
+            trace_root: [0u8; TRACE_ROOT_BYTES],
+        };
+        r.trace_root[0] = 0xab;
+        r.trace_root[TRACE_ROOT_BYTES - 1] = 0x01;
+        r
+    }
+
+    #[test]
+    fn the_trace_root_is_hex_and_round_trips() {
+        let r = receipt_with_root();
+        let json = serde_json::to_string(&r).expect("serialise");
+        let expected = format!("\"trace_root\":\"{}\"", hex::encode(r.trace_root));
+        assert!(json.contains(&expected), "json was {json}");
+        let hex_field = json
+            .split("\"trace_root\":\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .expect("trace_root field");
+        assert_eq!(hex_field.len(), TRACE_ROOT_BYTES * 2);
+        assert_eq!(hex_field, hex_field.to_lowercase());
+        let back: Receipt = serde_json::from_str(&json).expect("deserialise");
+        assert_eq!(r, back);
+    }
+
+    #[test]
+    fn a_malformed_trace_root_is_rejected_without_panicking() {
+        // The field arrives from untrusted JSON: non-hex, wrong length and a
+        // non-string must all be errors, never a panic and never a silent zero.
+        for bad in ["\"zz\"", "\"00ff\"", "12", "\"\""] {
+            let json = format!(
+                "{{\"total_amount\":10,\"action_count\":1,\"completed_at\":500,\"chain_id\":1,\
+                 \"execution_id\":7,\"trace_root\":{}}}",
+                bad
+            );
+            assert!(
+                serde_json::from_str::<Receipt>(&json).is_err(),
+                "trace_root {bad} must be rejected"
+            );
+        }
     }
 
     #[test]
@@ -259,6 +378,7 @@ mod tests {
             completed_at: 500,
             chain_id: 1,
             execution_id: 7,
+            trace_root: [0u8; 32],
         };
         assert!(!r.is_replay(&[1, 2, 3]));
         assert!(r.is_replay(&[1, 7, 9]));

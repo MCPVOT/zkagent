@@ -18,7 +18,7 @@ the ZK workstream's inventory, not the network's.
 ## What runs where, and why
 
 **Proving is the expensive half; verification is cheap.** From
-`docs/MEASUREMENTS.md`, on a laptop CPU: prove 0.43–0.64 s, verify 0.048–0.091 s.
+`docs/MEASUREMENTS.md`, on a laptop CPU: prove 0.66–0.70 s, verify 0.048–0.091 s.
 That asymmetry decides the placement.
 
 | Workload | Where it fits | Why |
@@ -32,7 +32,7 @@ That asymmetry decides the placement.
 ## Proving on the droplet: measured, or estimated?
 
 **Estimated, and stated as such.** Research report 07 measured 128-byte proofs at
-0.43–0.64 s on a Ryzen 7 7800X3D with a Groth16 prover peaking around 29 MB RSS.
+0.66–0.70 s on a Ryzen 7 7800X3D with a Groth16 prover peaking around 29 MB RSS.
 The droplet has 2 vCPU / 3 GB, so it *should* prove comfortably — the memory floor
 is two orders of magnitude below its capacity.
 

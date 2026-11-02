@@ -243,6 +243,8 @@ mod tests {
             },
         ]
     }
+    /// The receipt as a caller would write it: the trace root is left at zero
+    /// because only the prover can compute it from the private witness.
     fn receipt() -> Receipt {
         Receipt {
             total_amount: 400,
@@ -250,6 +252,7 @@ mod tests {
             completed_at: 1_500,
             chain_id: 1,
             execution_id: 1,
+            trace_root: [0u8; 32],
         }
     }
 
@@ -257,6 +260,8 @@ mod tests {
         vk: Vec<u8>,
         pubkey: Vec<u8>,
         sig: Vec<u8>,
+        /// The receipt as the prover completed it, with its trace root.
+        receipt: Receipt,
         proof: ProofBytes,
     }
 
@@ -265,12 +270,13 @@ mod tests {
         let auth = Authority::from_seed(99);
         let p = policy();
         let sig = auth.sign_policy(&p);
-        let proof = prove(&keys, &p, &receipt(), &actions()).unwrap();
+        let proven = prove(&keys, &p, &receipt(), &actions()).unwrap();
         Fixture {
             vk: keys.verifying_key_bytes().unwrap(),
             pubkey: auth.public_key().as_bytes().to_vec(),
             sig: sig.bytes,
-            proof,
+            receipt: proven.receipt,
+            proof: proven.proof,
         }
     }
 
@@ -281,7 +287,7 @@ mod tests {
             verify(
                 &f.vk,
                 &policy(),
-                &receipt(),
+                &f.receipt,
                 &f.proof,
                 &f.pubkey,
                 &f.sig,
@@ -295,8 +301,30 @@ mod tests {
     fn tampered_receipt_is_rejected() {
         // The whole point: change the claimed total and the binding fails.
         let f = fixture();
-        let mut r = receipt();
+        let mut r = f.receipt.clone();
         r.total_amount = 401;
+        assert_eq!(
+            verify(
+                &f.vk,
+                &policy(),
+                &r,
+                &f.proof,
+                &f.pubkey,
+                &f.sig,
+                Some(1_600)
+            ),
+            Verdict::Reject(RejectReason::PublicInputMismatch)
+        );
+    }
+
+    #[test]
+    fn a_swapped_trace_root_is_rejected() {
+        // The receipt is the only place a verifier learns the commitment, so a
+        // receipt whose root was replaced with another execution's must fail the
+        // input binding — that is the binding, seen from the verifier's side.
+        let f = fixture();
+        let mut r = f.receipt.clone();
+        r.trace_root[0] ^= 0xff;
         assert_eq!(
             verify(
                 &f.vk,
@@ -319,7 +347,7 @@ mod tests {
             verify(
                 &f.vk,
                 &policy(),
-                &receipt(),
+                &f.receipt,
                 &f.proof,
                 other.public_key().as_bytes(),
                 &f.sig,
@@ -336,7 +364,7 @@ mod tests {
         match verify(
             &other,
             &policy(),
-            &receipt(),
+            &f.receipt,
             &f.proof,
             &f.pubkey,
             &f.sig,
@@ -361,7 +389,7 @@ mod tests {
             verify(
                 &f.vk,
                 &p,
-                &receipt(),
+                &f.receipt,
                 &f.proof,
                 &f.pubkey,
                 &f.sig,
@@ -374,13 +402,8 @@ mod tests {
     #[test]
     fn expired_receipt_is_rejected() {
         let f = fixture();
-        let r = Receipt {
-            total_amount: 400,
-            action_count: 2,
-            completed_at: 2_000,
-            chain_id: 1,
-            execution_id: 1,
-        };
+        let mut r = f.receipt.clone();
+        r.completed_at = 2_000;
         assert_eq!(
             verify(
                 &f.vk,
@@ -403,7 +426,7 @@ mod tests {
             verify(
                 &f.vk,
                 &policy(),
-                &receipt(),
+                &f.receipt,
                 &f.proof,
                 &f.pubkey,
                 &f.sig,
@@ -422,7 +445,7 @@ mod tests {
             verify(
                 &f.vk,
                 &policy(),
-                &receipt(),
+                &f.receipt,
                 &p,
                 &f.pubkey,
                 &f.sig,
@@ -448,7 +471,7 @@ mod tests {
         // The anti-replay property: the execution id is a public input, so a
         // proof made for id 1 cannot be re-presented as id 2.
         let f = fixture();
-        let mut r = receipt();
+        let mut r = f.receipt.clone();
         r.execution_id = 2;
         assert_eq!(
             verify(
@@ -467,7 +490,7 @@ mod tests {
     #[test]
     fn a_zero_execution_id_is_rejected() {
         let f = fixture();
-        let mut r = receipt();
+        let mut r = f.receipt.clone();
         r.execution_id = 0;
         match verify(
             &f.vk,

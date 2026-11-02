@@ -60,6 +60,7 @@ pub use zkagent_verifier::{RejectReason, Verdict};
 // see `docs/CODE-MAP.md`.
 pub use wire::{ActionJson, AuthorizedPolicy, PolicyJson, ReceiptJson, SignedPolicyFile};
 pub use zkagent_ipfs::{AttestationManifest, BlockSource, DirSource, MemorySource};
+pub use zkagent_proofs::prover::ProvenExecution;
 pub use zkagent_wire::{ProofBytes, FORMAT_VERSION};
 
 /// The crate version, surfaced for hosts that want to report it.

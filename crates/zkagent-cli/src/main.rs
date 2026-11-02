@@ -263,12 +263,26 @@ fn run() -> Result<ExitCode, String> {
             actions,
             out,
         } => {
+            let receipt_path = receipt.clone();
             let receipt = zkagent_service::read_receipt(&receipt).map_err(|e| e.to_string())?;
             let actions = zkagent_service::read_actions(&actions).map_err(|e| e.to_string())?;
-            let proof = zkagent_service::prove(&keys, &policy, &receipt, &actions)
+            let proven = zkagent_service::prove(&keys, &policy, &receipt, &actions)
                 .map_err(|e| e.to_string())?;
-            zkagent_service::write_json(&out, &proof).map_err(|e| e.to_string())?;
+            zkagent_service::write_json(&out, &proven.proof).map_err(|e| e.to_string())?;
+            // The receipt is an output of proving, not only an input: the proof
+            // commits to the trace root over the private digests, and a verifier
+            // recomputes that commitment from the receipt it is given. Writing
+            // the completed receipt back is what keeps an honest run
+            // self-consistent without making the caller hash a witness it cannot
+            // see.
+            zkagent_service::write_json(
+                &receipt_path,
+                &zkagent_service::ReceiptJson::from(&proven.receipt),
+            )
+            .map_err(|e| e.to_string())?;
             println!("proof written: {}", out.display());
+            println!("receipt:       {}", receipt_path.display());
+            println!("trace root:    {}", hex::encode(proven.receipt.trace_root));
             Ok(ExitCode::SUCCESS)
         }
 

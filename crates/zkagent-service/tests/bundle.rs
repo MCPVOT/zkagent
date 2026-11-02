@@ -34,6 +34,7 @@ fn receipt() -> Receipt {
         completed_at: 1_500,
         chain_id: 1,
         execution_id: 7_001,
+        trace_root: [0u8; 32],
     }
 }
 
@@ -77,7 +78,7 @@ fn fixture(root: &std::path::Path) -> Fixture {
 
     fs::write(
         &receipt_path,
-        r#"{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":7001}"#,
+        r#"{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":7001,"trace_root":"0000000000000000000000000000000000000000000000000000000000000000"}"#,
     )
     .expect("receipt");
     fs::write(
@@ -86,9 +87,15 @@ fn fixture(root: &std::path::Path) -> Fixture {
     )
     .expect("actions");
 
-    let proof_bytes =
-        zkagent_service::prove(&keys, &policy, &receipt(), &actions()).expect("prove");
-    zkagent_service::write_json(&proof, &proof_bytes).expect("write proof");
+    let proven = zkagent_service::prove(&keys, &policy, &receipt(), &actions()).expect("prove");
+    zkagent_service::write_json(&proof, &proven.proof).expect("write proof");
+    // Write the receipt the prover completed, so the published bytes carry the
+    // trace root the proof commits to.
+    zkagent_service::write_json(
+        &receipt_path,
+        &zkagent_service::ReceiptJson::from(&proven.receipt),
+    )
+    .expect("write receipt");
 
     Fixture {
         keys,
@@ -128,8 +135,8 @@ fn a_published_bundle_verifies() {
     }
 
     // The circuit identity is measured, not copied.
-    assert_eq!(published.manifest.circuit.public_inputs, 15);
-    assert_eq!(published.manifest.circuit.format_version, 2);
+    assert_eq!(published.manifest.circuit.public_inputs, 16);
+    assert_eq!(published.manifest.circuit.format_version, 3);
 
     let outcome = verify_bundle(&published.manifest, &blocks, Some(1_600), None).expect("verify");
     assert!(

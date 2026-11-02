@@ -16,13 +16,13 @@ first is a claim about the shipped code.
 
 | Number | Value | Provenance |
 |---|---|---|
-| circuit size | 3 333 constraints, 15 public inputs | project-measured (`constraint_count_is_sane`) |
+| circuit size | 7 442 constraints, 16 public inputs | project-measured (`constraint_count_is_sane`) |
 | probe circuit (research doc 05 §4.2) | 2 162 constraints, 9 public inputs | research probe on 0.6.0, earlier circuit shape |
 | SMT non-membership gadget | `c(d) = 243·d + 2` | research probe on 0.6.0 — re-measure before budgeting |
 | delegation hop | 1 021 constraints | research probe on 0.6.0 |
 | zkVM proving floor | 3.3–16 GB RAM | borrowed benchmark |
 
-The 2 162 figure and the 3 333 figure are both real; they measure different
+The 2 162 figure and the 7 442 figure are both real; they measure different
 circuits. Conflating them is the error, so neither is deleted. See
 `docs/research/README.md#measurement-provenance`.
 
@@ -32,11 +32,17 @@ circuits. Conflating them is the error, so neither is deleted. See
 cargo test -p zkagent-proofs constraint_count_is_sane -- --nocapture
 ```
 ```
-constraints = 3333, instance variables = 16
+constraints = 7442, instance variables = 17
 test result: ok. 1 passed
 ```
-16 instance variables = 15 public inputs + the constant-one slot. The test
+17 instance variables = 16 public inputs + the constant-one slot. The test
 asserts both numbers, so a regression fails rather than shifting silently.
+
+The jump from 3 333 is the MiMC trace root (issue #7): seven internal 2-to-1
+nodes over the eight padded digests at 660 constraints each = 4 620, replacing
+the 511 constraints the old per-digest 64-bit decompositions cost. The issue's
+own cost table priced "depth 3" as three nodes (1 980); a depth-3 tree over
+eight leaves has seven, which is the number measured here.
 
 A second test, `public_input_order_matches_the_allocation_order`, compares the
 constraint system's `instance_assignment` to `public_inputs()` element by
@@ -83,7 +89,9 @@ Z=target/debug/zkagent.exe
 $Z setup  --seed 7 --out keys/
 $Z policy --max-amount 1000 --max-per-action 300 --expires-at 2000 \
           --chain-id 1 --targets 3,7,9 --authority-key authority.hex --out policy.json
-echo '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001}' > receipt.json
+echo '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001,"trace_root":"00…00"}' > receipt.json
+# the trace_root value above is a placeholder: `prove` derives it from the
+# private digests and writes the completed receipt back over this file.
 echo '[{"target":3,"amount":250,"trace_digest":11},{"target":7,"amount":150,"trace_digest":22}]' > actions.json
 $Z prove  --keys keys/ --policy policy.json --receipt receipt.json --actions actions.json --out proof.json
 $Z verify --keys keys/ --policy policy.json --receipt receipt.json --proof proof.json --now 1600
@@ -93,8 +101,9 @@ ACCEPT
 inputs: 14 | format: 1 | proof bytes: 128
 pk.bin 648816   vk.bin 712   proof.json 2170
 ```
-Release, with `parallel`: prove 0.43–0.64 s, verify 0.048–0.091 s (see the
-timings table below for the serial comparison).
+Release, with `parallel`: prove 0.66–0.70 s, verify 0.048–0.091 s (see the
+timings table below for the serial comparison; that table predates the MiMC
+trace root, which added ~4.6k constraints).
 
 Negative controls, all exercised through the real binary:
 

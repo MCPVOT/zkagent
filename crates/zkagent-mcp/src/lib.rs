@@ -318,7 +318,7 @@ fn tool_prove(args: &Value) -> Result<Value, RpcError> {
         message: e.to_string(),
     })?;
 
-    let proof =
+    let proven =
         zkagent_service::prove(&keys_dir, &policy_path, &receipt, &actions).map_err(|e| {
             RpcError {
                 code: -32000,
@@ -328,17 +328,30 @@ fn tool_prove(args: &Value) -> Result<Value, RpcError> {
 
     let proof_path = opt_str(args, "proof_path").map(PathBuf::from);
     if let Some(path) = &proof_path {
-        zkagent_service::write_json(path, &proof).map_err(|e| RpcError {
+        zkagent_service::write_json(path, &proven.proof).map_err(|e| RpcError {
             code: -32000,
             message: e.to_string(),
         })?;
     }
 
+    // The receipt is completed by the prover (the trace root is derived from the
+    // private witness), so write it back. A caller that keeps the old file would
+    // verify against a root the proof does not commit to.
+    zkagent_service::write_json(
+        &receipt_path,
+        &zkagent_service::ReceiptJson::from(&proven.receipt),
+    )
+    .map_err(|e| RpcError {
+        code: -32000,
+        message: e.to_string(),
+    })?;
+
     Ok(ok(json!({
         "proof_path": proof_path.map(|p| p.display().to_string()),
-        "format_version": proof.format_version,
-        "public_inputs": proof.public_inputs,
-        "proof_bytes": proof.proof.len()
+        "format_version": proven.proof.format_version,
+        "public_inputs": proven.proof.public_inputs,
+        "proof_bytes": proven.proof.proof.len(),
+        "trace_root": hex_encode(&proven.receipt.trace_root)
     })))
 }
 

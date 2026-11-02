@@ -8,19 +8,21 @@
 //!   * `max_per_action` — per-action cap,
 //!   * `expires_at` — policy expiry,
 //!   * `completed_at` — when the execution finished,
-//!   * `allowed[0..8]` — the allow-list, padded with [`TARGET_SENTINEL`],
+//!   * `allowed[0..8]` — the allow-list, padded by repeating `allowed[0]`,
 //!   * `receipt_total` — total value the agent claims to have moved,
-//!   * `receipt_action_count` — how many actions the agent claims.
+//!   * `receipt_action_count` — how many actions the agent claims,
+//!   * `execution_id` — the anti-replay id,
+//!   * `trace_root` — the MiMC Merkle root over the eight padded digests.
 //!
 //! **Private (what the proof hides):**
 //!   * the actions themselves: each action's `target`, `amount` and
 //!     `trace_digest`.
 //!
-//! A verifier therefore learns *that a conforming execution happened* and its
-//! aggregate cost — never which tools were called, in what order, or what the
-//! per-action amounts were.
+//! A verifier therefore learns *that a conforming execution happened*, its
+//! aggregate cost, and a root committing to the trace digests — never which
+//! tools were called, in what order, or what the per-action amounts were.
 //!
-//! # Why nothing in this circuit hashes
+//! # The one hash in this circuit, and why it is safe
 //!
 //! An earlier draft hashed the policy inside the circuit so the policy itself
 //! could stay hidden. That needs a SHA-256 or Poseidon gadget, and the first
@@ -28,12 +30,13 @@
 //! them — a circuit that produces the right digest for an honest prover while
 //! constraining nothing at all, i.e. no soundness.
 //!
-//! The fix is a design change rather than a better hash: **the policy is
-//! public** (it is the human's published delegation, and a verifier must check
-//! the proof against exactly those values) and **the execution is private**
-//! (the thing actually worth hiding). That removes the in-circuit hash, and
-//! with it a whole class of soundness bugs, while preserving the privacy
-//! property that matters.
+//! The policy is therefore **public** (it is the human's published delegation,
+//! and a verifier must check the proof against exactly those values) and the
+//! execution is **private** (the thing actually worth hiding). One hash remains:
+//! the MiMC Merkle root in [`crate::merkle`], which is built entirely from
+//! constraints — every multiplication comes from the gadget, and the result is
+//! compared to a public input. Nothing in it reads a witness value to decide
+//! *what constraint to add*.
 //!
 //! # Soundness notes that matter
 //!
@@ -46,6 +49,7 @@
 //! * Target equality is field equality, which is integer equality here because
 //!   every value is far below the modulus.
 
+use ark_ff::PrimeField;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::boolean::Boolean;
 use ark_r1cs_std::cmp::CmpGadget;
@@ -110,6 +114,8 @@ pub struct ReceiptPublic {
     pub completed_at: u64,
     /// Unique execution id (anti-replay). Must be non-zero.
     pub execution_id: u64,
+    /// Merkle root over the padded per-action trace digests, as a field element.
+    pub trace_root: CircuitField,
 }
 
 /// Private witness for one action.
@@ -119,7 +125,7 @@ pub struct ActionWitness {
     pub target: u64,
     /// Value moved.
     pub amount: u64,
-    /// Per-action trace commitment (bound but not compared in v1).
+    /// Per-action trace commitment. Bound to the public Merkle root.
     pub trace_digest: u64,
 }
 
@@ -133,13 +139,13 @@ impl ConstraintSynthesizer<CircuitField> for PolicyConformanceCircuit {
         // ------------------------------------------------------------------
         // NOTE: none of these uses `UInt::new_input`. In this arkworks line a
         // `UInt` input allocates ONE PUBLIC INPUT PER BIT (64 per value, 896 in
-        // total for this statement), which makes `verify_proof` expect a
+        // total for this statement), which makes `verify_proof` expect an
         // 896-element input vector and fail with `MalformedVerifyingKey` when
-        // the verifier supplies the 14 values it actually has.
+        // the verifier supplies the 16 values it actually has.
         //
         // Instead each public value is a single `FpVar` input, and a 64-bit
         // witness decomposition is *bound* to it. That both keeps the public
-        // input count at 14 and range-checks the value: the recomposition of 64
+        // input count at 16 and range-checks the value: the recomposition of 64
         // bits cannot equal an input that is >= 2^64, so an out-of-range public
         // value makes the circuit unsatisfiable rather than wrapping.
         let max_amount = pub_u64(&cs, self.policy.max_amount)?;
@@ -175,22 +181,33 @@ impl ConstraintSynthesizer<CircuitField> for PolicyConformanceCircuit {
         // correct. Keep these two orders in lockstep.
         let execution_id = pub_u64(&cs, self.receipt.execution_id)?;
 
+        // The trace root is allocated LAST of all, after the execution id, so
+        // that every index in an earlier artifact's vector keeps its meaning.
+        // `public_inputs()` appends it last for the same reason.
+        let trace_root =
+            FpVar::<CircuitField>::new_input(cs.clone(), || Ok(self.receipt.trace_root))?;
+
         // ------------------------------------------------------------------
         // Private actions.
         // ------------------------------------------------------------------
         let mut action_vars = Vec::with_capacity(MAX_ACTIONS);
+        let mut digest_vars = Vec::with_capacity(MAX_ACTIONS);
         for a in &self.actions {
             action_vars.push((
                 U64Var::new_witness(cs.clone(), || Ok(a.target))?,
                 U64Var::new_witness(cs.clone(), || Ok(a.amount))?,
-                U64Var::new_witness(cs.clone(), || Ok(a.trace_digest))?,
             ));
+            // The digest is a field element, not a 64-bit integer: it is only
+            // ever hashed, and the tree's leaves are field elements.
+            digest_vars.push(FpVar::<CircuitField>::new_witness(cs.clone(), || {
+                Ok(CircuitField::from(a.trace_digest))
+            })?);
         }
 
         // ------------------------------------------------------------------
         // 1. Per-action cap.
         // ------------------------------------------------------------------
-        for (_, amount, _) in &action_vars {
+        for (_, amount) in &action_vars {
             amount
                 .is_le(&max_per_action)?
                 .enforce_equal(&Boolean::TRUE)?;
@@ -222,7 +239,7 @@ impl ConstraintSynthesizer<CircuitField> for PolicyConformanceCircuit {
         // `Boolean::or`, which this version of `ark-r1cs-std` only exposes on
         // its allocated variant; the product is both shorter and harder to get
         // subtly wrong.
-        for (target, _, _) in &action_vars {
+        for (target, _) in &action_vars {
             let target_fp = uint_to_fp(target)?;
             let mut product = FpVar::<CircuitField>::one();
             for slot in &allowed {
@@ -235,7 +252,7 @@ impl ConstraintSynthesizer<CircuitField> for PolicyConformanceCircuit {
         // 5. The actions explain the receipt.
         // ------------------------------------------------------------------
         let mut sum = FpVar::<CircuitField>::zero();
-        for (_, amount, _) in &action_vars {
+        for (_, amount) in &action_vars {
             sum += uint_to_fp(amount)?;
         }
         sum.enforce_equal(&uint_to_fp(&receipt_total)?)?;
@@ -244,7 +261,7 @@ impl ConstraintSynthesizer<CircuitField> for PolicyConformanceCircuit {
         // 6. Action count equals the number of non-zero actions.
         // ------------------------------------------------------------------
         let mut live = FpVar::<CircuitField>::zero();
-        for (_, amount, _) in &action_vars {
+        for (_, amount) in &action_vars {
             let is_zero = uint_to_fp(amount)?.is_zero()?;
             // `1 - is_zero` as a field element; avoids relying on
             // `Boolean::not`, which is only on the allocated variant here.
@@ -271,15 +288,16 @@ impl ConstraintSynthesizer<CircuitField> for PolicyConformanceCircuit {
             .enforce_equal(&Boolean::FALSE)?;
 
         // ------------------------------------------------------------------
-        // 9. Trace digests are real witness values.
+        // 9. The private digests commit to the public trace root.
         // ------------------------------------------------------------------
-        // Not compared to anything public in v1. Decomposing them keeps the
-        // compiler from eliding them and turns the v2 upgrade (binding a
-        // transcript root) into one extra comparison rather than a change of
-        // witness shape.
-        for (_, _, digest) in &action_vars {
-            let _bits = digest.to_bits_le()?;
-        }
+        // This is what makes `trace_digest` mean something. The circuit builds
+        // the Merkle tree from the private leaves and constrains its root to
+        // equal the public input, so a receipt binds exactly the action set the
+        // proof is about: change one digest and no witness satisfies the
+        // published root. Before this constraint the digests were allocated and
+        // immediately thrown away, which is a commitment to nothing.
+        let computed_root = crate::merkle::root(&digest_vars)?;
+        computed_root.enforce_equal(&trace_root)?;
 
         Ok(())
     }
@@ -357,6 +375,7 @@ pub fn build_circuit(
             action_count: receipt.action_count as u64,
             completed_at: receipt.completed_at,
             execution_id: receipt.execution_id,
+            trace_root: CircuitField::from_le_bytes_mod_order(&receipt.trace_root),
         },
         actions: padded,
     }
@@ -406,6 +425,7 @@ pub fn measure_shape(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::merkle;
     use ark_relations::r1cs::ConstraintSystem;
 
     fn sample_policy() -> Policy {
@@ -427,14 +447,25 @@ mod tests {
         ]
     }
 
+    /// Fills in the honest root, so a negative test fails for the reason it
+    /// names rather than because the root does not match the actions.
+    fn receipt_with_root(mut receipt: Receipt, actions: &[Action]) -> Receipt {
+        receipt.trace_root = merkle::root_bytes_for_actions(actions);
+        receipt
+    }
+
     fn sample_receipt() -> Receipt {
-        Receipt {
-            total_amount: 400,
-            action_count: 2,
-            completed_at: 1_500,
-            chain_id: 1,
-            execution_id: 1,
-        }
+        receipt_with_root(
+            Receipt {
+                total_amount: 400,
+                action_count: 2,
+                completed_at: 1_500,
+                chain_id: 1,
+                execution_id: 1,
+                trace_root: [0u8; 32],
+            },
+            &sample_actions(),
+        )
     }
 
     fn is_satisfied(policy: &Policy, receipt: &Receipt, actions: &[Action]) -> bool {
@@ -455,6 +486,49 @@ mod tests {
     }
 
     #[test]
+    fn a_receipt_whose_root_is_not_the_merkle_root_of_its_digests_fails() {
+        // THE point of issue #7. The digests are private, so the only thing that
+        // can bind them to the published receipt is a commitment the circuit
+        // rebuilds. Without this constraint a prover publishes any root it likes
+        // (or none) and the digest is a witness to nothing — exactly the defect
+        // this test was written against, before the gadget existed.
+        let policy = sample_policy();
+        let actions = sample_actions();
+
+        let honest = sample_receipt();
+        assert!(
+            is_satisfied(&policy, &honest, &actions),
+            "the honest root must be accepted"
+        );
+
+        let mut tampered = honest.clone();
+        tampered.trace_root[0] ^= 1;
+        assert!(
+            !is_satisfied(&policy, &tampered, &actions),
+            "a root that is not the Merkle root of the witness must be refused"
+        );
+
+        let mut wrong_field = honest.clone();
+        wrong_field.trace_root = [0u8; 32];
+        assert!(
+            !is_satisfied(&policy, &wrong_field, &actions),
+            "the zero root must not satisfy a non-zero trace"
+        );
+    }
+
+    #[test]
+    fn changing_a_private_digest_breaks_the_published_root() {
+        // Same receipt, different witness: the actions no longer explain the
+        // root, so no proof exists even though every amount and target is still
+        // legal. That is the binding, stated as a test.
+        let policy = sample_policy();
+        let receipt = sample_receipt();
+        let mut actions = sample_actions();
+        actions[0].trace_digest += 1;
+        assert!(!is_satisfied(&policy, &receipt, &actions));
+    }
+
+    #[test]
     fn per_action_overrun_fails() {
         let actions = vec![
             Action {
@@ -468,18 +542,12 @@ mod tests {
                 trace_digest: 2,
             },
         ];
-        assert!(!is_satisfied(&sample_policy(), &sample_receipt(), &actions));
+        let receipt = receipt_with_root(sample_receipt(), &actions);
+        assert!(!is_satisfied(&sample_policy(), &receipt, &actions));
     }
 
     #[test]
     fn total_over_cap_fails() {
-        let receipt = Receipt {
-            total_amount: 1_001,
-            action_count: 3,
-            completed_at: 1_500,
-            chain_id: 1,
-            execution_id: 1,
-        };
         let actions = vec![
             Action {
                 target: 3,
@@ -497,6 +565,17 @@ mod tests {
                 trace_digest: 3,
             },
         ];
+        let receipt = receipt_with_root(
+            Receipt {
+                total_amount: 1_001,
+                action_count: 3,
+                completed_at: 1_500,
+                chain_id: 1,
+                execution_id: 1,
+                trace_root: [0u8; 32],
+            },
+            &actions,
+        );
         // Each action is within the per-action cap and the sum matches the
         // inflated receipt, so only the TOTAL cap catches this.
         assert!(!is_satisfied(&sample_policy(), &receipt, &actions));
@@ -516,42 +595,55 @@ mod tests {
                 trace_digest: 2,
             },
         ];
-        assert!(!is_satisfied(&sample_policy(), &sample_receipt(), &actions));
+        let receipt = receipt_with_root(sample_receipt(), &actions);
+        assert!(!is_satisfied(&sample_policy(), &receipt, &actions));
     }
 
     #[test]
     fn expired_execution_fails() {
-        let receipt = Receipt {
-            total_amount: 400,
-            action_count: 2,
-            completed_at: 2_000, // == expires_at; must be strictly before
-            chain_id: 1,
-            execution_id: 1,
-        };
+        let receipt = receipt_with_root(
+            Receipt {
+                total_amount: 400,
+                action_count: 2,
+                completed_at: 2_000, // == expires_at; must be strictly before
+                chain_id: 1,
+                execution_id: 1,
+                trace_root: [0u8; 32],
+            },
+            &sample_actions(),
+        );
         assert!(!is_satisfied(&sample_policy(), &receipt, &sample_actions()));
     }
 
     #[test]
     fn action_count_mismatch_fails() {
-        let receipt = Receipt {
-            total_amount: 400,
-            action_count: 3,
-            completed_at: 1_500,
-            chain_id: 1,
-            execution_id: 1,
-        };
+        let receipt = receipt_with_root(
+            Receipt {
+                total_amount: 400,
+                action_count: 3,
+                completed_at: 1_500,
+                chain_id: 1,
+                execution_id: 1,
+                trace_root: [0u8; 32],
+            },
+            &sample_actions(),
+        );
         assert!(!is_satisfied(&sample_policy(), &receipt, &sample_actions()));
     }
 
     #[test]
     fn sum_mismatch_fails() {
-        let receipt = Receipt {
-            total_amount: 401,
-            action_count: 2,
-            completed_at: 1_500,
-            chain_id: 1,
-            execution_id: 1,
-        };
+        let receipt = receipt_with_root(
+            Receipt {
+                total_amount: 401,
+                action_count: 2,
+                completed_at: 1_500,
+                chain_id: 1,
+                execution_id: 1,
+                trace_root: [0u8; 32],
+            },
+            &sample_actions(),
+        );
         assert!(!is_satisfied(&sample_policy(), &receipt, &sample_actions()));
     }
 
@@ -601,13 +693,17 @@ mod tests {
         }
 
         let setup_policy = Policy::new(1, 1, 1, 1, vec![0]).unwrap();
-        let setup_receipt = Receipt {
-            total_amount: 0,
-            action_count: 0,
-            completed_at: 0,
-            chain_id: 1,
-            execution_id: 1,
-        };
+        let setup_receipt = receipt_with_root(
+            Receipt {
+                total_amount: 0,
+                action_count: 0,
+                completed_at: 0,
+                chain_id: 1,
+                execution_id: 1,
+                trace_root: [0u8; 32],
+            },
+            &[],
+        );
 
         let setup_shape = shape(&setup_policy, &setup_receipt, &[]);
         let real_shape = shape(&sample_policy(), &sample_receipt(), &sample_actions());
@@ -628,10 +724,18 @@ mod tests {
 
     #[test]
     fn public_input_vector_has_the_expected_shape() {
-        let v = public_inputs(&sample_policy(), &sample_receipt());
-        assert_eq!(v.len(), 7 + MAX_POLICY_TARGETS);
+        let receipt = sample_receipt();
+        let v = public_inputs(&sample_policy(), &receipt);
+        // Six scalars + 8 allow-list slots + execution id + trace root.
+        assert_eq!(v.len(), 7 + MAX_POLICY_TARGETS + 1);
         assert_eq!(v[0], CircuitField::from(1_000u64));
         assert_eq!(v[5], CircuitField::from(2u64));
+        assert_eq!(v[v.len() - 1], merkle::root_from_digests(&[111, 222]));
+        assert_eq!(
+            v[v.len() - 2],
+            CircuitField::from(1u64),
+            "the execution id must stay immediately before the root"
+        );
     }
 
     #[test]
@@ -646,8 +750,8 @@ mod tests {
         let constraints = cs.num_constraints();
         let instances = cs.num_instance_variables();
         println!("constraints = {constraints}, instance variables = {instances}");
-        // 14 public inputs plus the constant-one slot.
-        assert_eq!(instances, 7 + MAX_POLICY_TARGETS + 1);
+        // 16 public inputs plus the constant-one slot.
+        assert_eq!(instances, 7 + MAX_POLICY_TARGETS + 1 + 1);
         assert!(
             (500..50_000).contains(&constraints),
             "constraint count {constraints} outside the expected band"
@@ -671,17 +775,11 @@ mod tests {
 #[cfg(test)]
 mod shape_tests {
     use super::*;
+    use crate::merkle;
 
     #[test]
     fn measure_shape_reports_the_shipped_shape() {
         let policy = Policy::new(1_000, 300, 2_000, 1, vec![3, 7, 9]).unwrap();
-        let receipt = Receipt {
-            total_amount: 400,
-            action_count: 2,
-            completed_at: 1_500,
-            chain_id: 1,
-            execution_id: 1_001,
-        };
         let actions = vec![
             Action {
                 target: 3,
@@ -694,9 +792,17 @@ mod shape_tests {
                 trace_digest: 22,
             },
         ];
+        let receipt = Receipt {
+            total_amount: 400,
+            action_count: 2,
+            completed_at: 1_500,
+            chain_id: 1,
+            execution_id: 1_001,
+            trace_root: merkle::root_bytes_for_actions(&actions),
+        };
         let (constraints, public_inputs) = measure_shape(&policy, &receipt, &actions).unwrap();
         println!("measured: {constraints} constraints, {public_inputs} public inputs");
-        assert_eq!(public_inputs, 15, "the arity the verifier expects");
+        assert_eq!(public_inputs, 16, "the arity the verifier expects");
         assert!(constraints > 0);
     }
 }
