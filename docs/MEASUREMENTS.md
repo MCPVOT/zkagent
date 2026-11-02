@@ -47,13 +47,34 @@ correct and the proof still does not verify.
 ## Test suite
 
 ```bash
-cargo test
+cargo test --workspace
 ```
+
+Re-measured **2026-11-01 on Linux** (Omarchy, rustc 1.99.1, `CARGO_BUILD_JOBS=4`):
+
 ```
-running 28 tests   ... test result: ok. 28 passed; 0 failed   (zkagent-core)
-running 17 tests   ... test result: ok. 17 passed; 0 failed   (zkagent-proofs)
-running 10 tests   ... test result: ok. 10 passed; 0 failed   (zkagent-verifier)
+running 31 tests  ... test result: ok. 31 passed   (zkagent-core)
+running 21 tests  ... test result: ok. 21 passed   (zkagent-ipfs)
+running  7 tests  ... test result: ok.  7 passed   (zkagent-mcp)
+running 18 tests  ... test result: ok. 18 passed   (zkagent-proofs)
+running 11 tests  ... test result: ok. 11 passed   (zkagent-verifier)
+running  9 tests  ... test result: ok.  9 passed   (zkagent-service, tests/service.rs)
+running  5 tests  ... test result: ok.  5 passed   (zkagent-service, tests/bundle.rs)
+TOTAL passed: 102  failed: 0
 ```
+
+Two things the earlier `28 / 17 / 10` counts got wrong, both worth knowing:
+
+- **The counts are stale.** The repository grew; `cargo test` alone also builds
+  each crate's harness separately, so the per-crate lines are what to compare,
+  not a remembered total.
+- **Feature-gated test binaries report `running 0 tests` and `ok`.** The
+  `tests/gateway.rs` binaries need `--all-features`; a zero-count `ok` is not a
+  passing suite. Check the counts, not the colour.
+
+The timings elsewhere in this file remain the **Windows** measurements; they have
+not been re-taken on Linux, and per the provenance rule they must be labelled as
+such until they are.
 
 ## End-to-end CLI, including negative controls
 
