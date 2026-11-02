@@ -1802,11 +1802,7 @@ dependencies = [
  "hex",
  "serde_json",
  "tempfile",
- "zkagent-core",
- "zkagent-ipfs",
- "zkagent-proofs",
  "zkagent-service",
- "zkagent-verifier",
 ]
 
 [[package]]
@@ -1844,10 +1840,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "zkagent-core",
- "zkagent-proofs",
  "zkagent-service",
- "zkagent-verifier",
 ]
 
 [[package]]
@@ -1869,6 +1862,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "zkagent-core",
+ "zkagent-wire",
 ]
 
 [[package]]
@@ -1884,6 +1878,7 @@ dependencies = [
  "zkagent-ipfs",
  "zkagent-proofs",
  "zkagent-verifier",
+ "zkagent-wire",
 ]
 
 [[package]]
@@ -1903,6 +1898,23 @@ dependencies = [
  "thiserror",
  "zkagent-core",
  "zkagent-proofs",
+ "zkagent-wire",
+]
+
+[[package]]
+name = "zkagent-wire"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "ark-groth16",
+ "ark-serialize",
+ "ark-snark",
+ "hex",
+ "serde",
+ "thiserror",
+ "zkagent-core",
 ]
 
 [[package]]

@@ -3,8 +3,10 @@ name: ci
 on:
   push:
     branches: [master, main]
+  # Every pull request, not only the ones targeting master: a stacked PR (base is
+  # another feature branch) had no checks at all, which is the worst of both
+  # worlds — the diff is still reviewed, the gate silently is not.
   pull_request:
-    branches: [master, main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -101,6 +103,18 @@ jobs:
           [ -n "$PY" ] || { echo "FAIL: no python on PATH"; exit 1; }
           "$PY" tools/research/test_check.py
           "$PY" tools/research/check.py
+
+      # Layering erodes one `use` at a time. docs/CODE-MAP.md names the intended
+      # edges; this makes the invariants (core/ipfs depend on nothing, no state or
+      # interface pointing outward) fail the build and reports the debt instead of
+      # letting it live in memory.
+      - name: check the crate graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          PY="$(command -v python || command -v python3)"
+          "$PY" tools/arch/test_check.py
+          "$PY" tools/arch/check.py
 
       # .gitignore covers __pycache__/*.pyc, but ignore rules do not remove what is
       # already tracked, and a tracked .pyc carries the machine's Python minor

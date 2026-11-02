@@ -54,10 +54,13 @@ pub use ops::{
 };
 // Re-exported so a host needs ONE dependency, not three, to read a verdict.
 pub use zkagent_verifier::{RejectReason, Verdict};
-// The proof artifact type, re-exported for the same reason: an embedder should
-// not have to add the prover crate to name the value it just verified.
+// The artifact types and the block sources, re-exported for the same reason: a
+// shell should name what it passes to these operations without adding three
+// crates to do it. `zkagent-cli` and `zkagent-mcp` depend on this crate alone —
+// see `docs/CODE-MAP.md`.
 pub use wire::{ActionJson, AuthorizedPolicy, PolicyJson, ReceiptJson, SignedPolicyFile};
-pub use zkagent_proofs::prover::ProofBytes;
+pub use zkagent_ipfs::{AttestationManifest, BlockSource, DirSource, MemorySource};
+pub use zkagent_wire::{ProofBytes, FORMAT_VERSION};
 
 /// The crate version, surfaced for hosts that want to report it.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
