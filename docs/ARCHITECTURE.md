@@ -219,6 +219,33 @@ Steps 2–4 are cheap and off-circuit, and they are *not* redundant with the
 proof: the circuit cannot see the human's signing key and cannot express "this
 specific policy is authorised".
 
+### 4.5.1 The verdict surface — a decision, not a sentence
+
+A verification ends in a `Verdict`: `Accept`, or `Reject(RejectReason)` where
+`RejectReason` is one of nine variants. Two things leave the process:
+
+* **The exit code**, unchanged since v0: `0` accept, `1` reject, `2` could not
+  verify (a missing block, an unparseable file). "Could not verify" is never
+  "verified false".
+* **The verdict document**, with `--json`:
+
+  ```json
+  {"verdict":"reject","reason_code":"public_input_mismatch",
+   "reason":"public inputs do not match the supplied policy/receipt",
+   "execution_id":1001,"format":2}
+  ```
+
+`reason_code` is `RejectReason::code()` and is the contract a harness branches
+on: `format_mismatch`, `public_input_mismatch`, `unauthorised_policy`,
+`chain_mismatch`, `expired`, `missing_execution_id`, `already_accepted`,
+`invalid_proof`, `malformed_proof`. The prose `reason` sits beside it for a
+person. `Display` may be reworded; a code may not be renamed without a breaking
+change, and `crates/zkagent-verifier/tests/reject_codes.rs` pins every one.
+
+The distinction matters for the same reason step ordering does: an agent that
+must parse English cannot tell "re-prove against the right receipt" from
+"refresh the expired policy", so it either gives up or does something worse.
+
 ---
 
 ## 5. Threat model
