@@ -102,6 +102,20 @@ jobs:
           "$PY" tools/research/test_check.py
           "$PY" tools/research/check.py
 
+      # .gitignore covers __pycache__/*.pyc, but ignore rules do not remove what is
+      # already tracked, and a tracked .pyc carries the machine's Python minor
+      # version into the tree for no reason. The publish checklist names this class;
+      # this makes it impossible to come back silently.
+      - name: no generated artifacts in the tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          bad="$(git ls-files | grep -iE '__pycache__|\.pyc$|(^|/)target/|\.DS_Store$' || true)"
+          if [ -n "$bad" ]; then
+            echo "FAIL: generated file(s) tracked:"; echo "$bad"; exit 1
+          fi
+          echo "OK: no tracked build artifacts"
+
       - name: cross-verification tests (conversion shape, no node needed)
         shell: bash
         run: |
