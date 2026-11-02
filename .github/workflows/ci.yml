@@ -3,8 +3,10 @@ name: ci
 on:
   push:
     branches: [master, main]
+  # Every pull request, not only the ones targeting master: a stacked PR (base is
+  # another feature branch) had no checks at all, which is the worst of both
+  # worlds — the diff is still reviewed, the gate silently is not.
   pull_request:
-    branches: [master, main]
 
 env:
   CARGO_TERM_COLOR: always
