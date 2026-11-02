@@ -23,10 +23,13 @@ class Rules(unittest.TestCase):
         return g
 
     def test_a_clean_graph_passes_every_invariant(self) -> None:
+        # The clean shape: the statement lives in `zkagent-wire`, so the prover and
+        # the verifier are siblings rather than one depending on the other.
         g = self.graph(
             **{
-                "zkagent-proofs": ["zkagent-core"],
-                "zkagent-verifier": ["zkagent-core", "zkagent-proofs"],
+                "zkagent-wire": ["zkagent-core"],
+                "zkagent-proofs": ["zkagent-core", "zkagent-wire"],
+                "zkagent-verifier": ["zkagent-core", "zkagent-wire"],
                 "zkagent-service": ["zkagent-core", "zkagent-verifier"],
                 "zkagent-cli": ["zkagent-service"],
                 "zkagent-mcp": ["zkagent-service"],

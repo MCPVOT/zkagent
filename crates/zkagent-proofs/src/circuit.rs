@@ -61,7 +61,17 @@ use ark_relations::r1cs::{
 use zkagent_core::{Action, Policy, Receipt, MAX_ACTIONS, MAX_POLICY_TARGETS};
 
 /// The field the circuit is defined over (BN254's scalar field).
-pub type CircuitField = ark_bn254::Fr;
+///
+/// Re-exported from `zkagent-wire` so the statement and the constraints cannot
+/// disagree about which field they compute in.
+pub use zkagent_wire::CircuitField;
+
+/// The public-input order, defined once in `zkagent-wire`.
+///
+/// The circuit allocates its inputs in exactly this order; keeping the definition
+/// in the wire crate is what lets a verifier assemble the vector without
+/// depending on the prover.
+pub use zkagent_wire::public_inputs;
 
 /// A 64-bit unsigned variable.
 pub type U64Var = UInt<64, u64, CircuitField>;
@@ -352,35 +362,9 @@ pub fn build_circuit(
     }
 }
 
-/// The ordered public-input vector a verifier must supply to
-/// `Groth16::verify_proof`.
-///
-/// Keep this the ONLY definition of the public-input order. A verifier that
-/// assembles the vector by hand can silently reorder it, and a mis-ordered
-/// vector makes a valid proof fail — or, worse, makes a proof about different
-/// values pass.
-pub fn public_inputs(policy: &Policy, receipt: &Receipt) -> Vec<CircuitField> {
-    let mut out = Vec::with_capacity(7 + MAX_POLICY_TARGETS);
-    out.push(CircuitField::from(policy.max_amount));
-    out.push(CircuitField::from(policy.max_per_action));
-    out.push(CircuitField::from(policy.expires_at));
-    out.push(CircuitField::from(receipt.completed_at));
-    out.push(CircuitField::from(receipt.total_amount));
-    out.push(CircuitField::from(receipt.action_count as u64));
-    for i in 0..MAX_POLICY_TARGETS {
-        let v = policy
-            .allowed_targets
-            .get(i)
-            .copied()
-            .or_else(|| policy.allowed_targets.first().copied())
-            .unwrap_or(0);
-        out.push(CircuitField::from(v));
-    }
-    // Anti-replay id last, so the earlier positions keep their meaning for
-    // anyone reading an older artifact's public inputs.
-    out.push(CircuitField::from(receipt.execution_id));
-    out
-}
+// The public-input order lives in `zkagent-wire` and is re-exported above. It used
+// to live here, which is why every verifier had to depend on the proving crate to
+// learn the order of the vector it verifies.
 
 /// Why a circuit shape could not be measured.
 #[derive(Debug, thiserror::Error)]

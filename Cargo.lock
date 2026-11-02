@@ -1869,6 +1869,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "zkagent-core",
+ "zkagent-wire",
 ]
 
 [[package]]
@@ -1903,6 +1904,23 @@ dependencies = [
  "thiserror",
  "zkagent-core",
  "zkagent-proofs",
+ "zkagent-wire",
+]
+
+[[package]]
+name = "zkagent-wire"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "ark-groth16",
+ "ark-serialize",
+ "ark-snark",
+ "hex",
+ "serde",
+ "thiserror",
+ "zkagent-core",
 ]
 
 [[package]]

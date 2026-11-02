@@ -1,0 +1,22 @@
+[package]
+name = "zkagent-wire"
+description = "The statement and the artifact encoding: public-input order, proof envelope, verifying-key parsing"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+repository = "https://github.com/MCPVOT/zkagent"
+
+[dependencies]
+zkagent-core = { path = "../zkagent-core", version = "0.1.0" }
+ark-bn254 = { version = "0.5.0", default-features = false, features = ["curve", "std"] }
+ark-ec = { version = "0.5.0", default-features = false, features = ["std"] }
+ark-ff = { version = "0.5.0", default-features = false, features = ["std"] }
+# No `r1cs`: this crate never builds a constraint system. That is the whole point
+# of the split — a verifier must not pull the proving machinery.
+ark-groth16 = { version = "0.5.0", default-features = false, features = ["std"] }
+ark-serialize = { version = "0.5.0", default-features = false, features = ["derive", "std"] }
+ark-snark = { version = "0.5.1", default-features = false }
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"

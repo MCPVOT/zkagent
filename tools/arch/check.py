@@ -32,6 +32,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 # Every crate in the workspace, in dependency order (leaves first).
 CRATES = [
     "zkagent-core",
+    "zkagent-wire",
     "zkagent-ipfs",
     "zkagent-proofs",
     "zkagent-verifier",
@@ -47,12 +48,12 @@ INVARIANTS: list[tuple[str, str]] = [
     ("zkagent-core", "nothing"),  # core is the vocabulary: no internal deps at all
     ("zkagent-ipfs", "nothing"),
     ("zkagent-verifier", "not zkagent-service"),  # the verifier has no host state
+    ("zkagent-verifier", "not zkagent-proofs"),   # and it does not carry the prover
     ("zkagent-service", "not shell"),             # the service must not own a shell
 ]
 
 # Known debt. Reported, never failed, until the commit that removes it.
 TARGETS: list[tuple[str, str]] = [
-    ("zkagent-verifier", "not zkagent-proofs"),
     ("shell", "service-only"),
 ]
 
