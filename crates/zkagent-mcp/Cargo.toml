@@ -2,7 +2,7 @@
 name = "zkagent-mcp"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.89"
 description = "MCP server shell for zkagent: expose zero-knowledge agent attestation to any agent harness"
 license = "MIT"
 repository = "https://github.com/MCPVOT/zkagent"
