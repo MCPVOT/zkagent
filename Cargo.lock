@@ -1802,11 +1802,7 @@ dependencies = [
  "hex",
  "serde_json",
  "tempfile",
- "zkagent-core",
- "zkagent-ipfs",
- "zkagent-proofs",
  "zkagent-service",
- "zkagent-verifier",
 ]
 
 [[package]]
@@ -1844,10 +1840,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "zkagent-core",
- "zkagent-proofs",
  "zkagent-service",
- "zkagent-verifier",
 ]
 
 [[package]]
@@ -1885,6 +1878,7 @@ dependencies = [
  "zkagent-ipfs",
  "zkagent-proofs",
  "zkagent-verifier",
+ "zkagent-wire",
 ]
 
 [[package]]
