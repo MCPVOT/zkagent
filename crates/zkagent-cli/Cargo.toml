@@ -2,7 +2,7 @@
 name = "zkagent-cli"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.89"
 description = "Command line shell for zkagent: setup, authorise, prove, verify"
 license = "MIT"
 repository = "https://github.com/MCPVOT/zkagent"

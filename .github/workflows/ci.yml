@@ -324,3 +324,26 @@ jobs:
 
           if [ "$fail" -ne 0 ]; then exit 1; fi
           echo "e2e exit-code contract OK"
+
+  # The declared MSRV is a promise, and this is the only job that compiles it.
+  # It exists because `rust-version = "1.80"` sat in every manifest while CI
+  # installed stable: a promise nobody checked, and a false one. Raised here
+  # after measuring: 1.80 cannot parse the dependency graph (edition2024 in
+  # zeroize_derive) and 1.85 cannot build it (enum-ordinalize 4.4.2 needs
+  # 1.89). Pinning the number that actually works turns the claim into a test.
+  msrv:
+    name: declared msrv (1.89) compiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install the declared toolchain
+        uses: dtolnay/rust-toolchain@1.89.0
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: cargo check on the declared MSRV, every feature
+        run: cargo check --workspace --all-features

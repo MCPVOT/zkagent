@@ -3,7 +3,7 @@ name = "zkagent-wire"
 description = "The statement and the artifact encoding: public-input order, proof envelope, verifying-key parsing"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.89"
 license = "MIT"
 repository = "https://github.com/MCPVOT/zkagent"
 
