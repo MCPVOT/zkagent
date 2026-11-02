@@ -120,6 +120,9 @@ wanted to receive.
       carries the machine's Python minor version for no reason, and grows.
 - [ ] `.gitignore` covers the class, not just the one file, so the artifact
       cannot come back.
+- [ ] CI enforces it: the `no generated artifacts in the tree` step fails when
+      `git ls-files` matches `__pycache__`, `*.pyc`, `target/` or `.DS_Store`. Ignore
+      rules do not remove what is already tracked, so a guard beats a rule.
 - [ ] The declared MSRV is tested by CI, or it is removed. `rust-version` is a
       promise to downstream consumers; CI that installs `stable` does not
       verify it.
