@@ -12,6 +12,39 @@ env:
   RAYON_NUM_THREADS: 2
 
 jobs:
+  # Tier 4: an independent implementation must accept our proofs and refuse
+  # tampered ones. Ubuntu only, because it needs node (snarkjs) and the property
+  # under test is implementation independence, not platform independence.
+  crossverify:
+    name: cross-verification (snarkjs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install rust (pinned toolchain)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target\n examples/crossverify -> target"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: build the cli and the exporter
+        run: |
+          cargo build -p zkagent-cli --bin zkagent
+          cargo build --manifest-path examples/crossverify/Cargo.toml
+
+      - name: snarkjs verifies our proof and refuses every mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          PY="$(command -v python || command -v python3)"
+          "$PY" tools/crossverify/run.py
+
   test:
     name: test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -68,6 +101,13 @@ jobs:
           [ -n "$PY" ] || { echo "FAIL: no python on PATH"; exit 1; }
           "$PY" tools/research/test_check.py
           "$PY" tools/research/check.py
+
+      - name: cross-verification tests (conversion shape, no node needed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PY="$(command -v python || command -v python3)"
+          "$PY" tools/crossverify/test_run.py
 
       - name: release build
         run: cargo build --release
