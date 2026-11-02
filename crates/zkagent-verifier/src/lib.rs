@@ -98,6 +98,28 @@ impl std::fmt::Display for RejectReason {
     }
 }
 
+impl RejectReason {
+    /// A stable, machine-readable identifier for this rejection.
+    ///
+    /// `Display` is prose for a person reading a terminal. A harness branches on
+    /// this instead: the strings are the contract, the variant names are an
+    /// internal detail, and renaming one is a breaking change for every caller.
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::FormatMismatch { .. } => "format_mismatch",
+            Self::PublicInputMismatch => "public_input_mismatch",
+            Self::UnauthorisedPolicy => "unauthorised_policy",
+            Self::ChainMismatch => "chain_mismatch",
+            Self::Expired => "expired",
+            Self::MissingExecutionId => "missing_execution_id",
+            Self::AlreadyAccepted(_) => "already_accepted",
+            Self::InvalidProof => "invalid_proof",
+            Self::MalformedProof(_) => "malformed_proof",
+        }
+    }
+}
+
 impl std::error::Error for RejectReason {}
 
 /// Verifies a proof against a policy and receipt, given the human's public key

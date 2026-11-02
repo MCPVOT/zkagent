@@ -25,7 +25,10 @@ fn every_reject_reason_has_a_stable_code() {
         (RejectReason::MissingExecutionId, "missing_execution_id"),
         (RejectReason::AlreadyAccepted(7), "already_accepted"),
         (RejectReason::InvalidProof, "invalid_proof"),
-        (RejectReason::MalformedProof("truncated".into()), "malformed_proof"),
+        (
+            RejectReason::MalformedProof("truncated".into()),
+            "malformed_proof",
+        ),
     ];
 
     for (reason, expected) in cases {

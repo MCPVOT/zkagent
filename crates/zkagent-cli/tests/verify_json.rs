@@ -33,7 +33,10 @@ fn prepared(dir: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     let policy = dir.join("policy.json");
     let proof = dir.join("proof.json");
 
-    let o = zkagent(&["setup", "--seed", "7", "--out", keys.to_str().unwrap()], dir);
+    let o = zkagent(
+        &["setup", "--seed", "7", "--out", keys.to_str().unwrap()],
+        dir,
+    );
     assert_eq!(code(&o), 0, "setup failed: {}", stderr(&o));
 
     let o = zkagent(
@@ -92,13 +95,7 @@ fn prepared(dir: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     (keys, policy, receipt, proof)
 }
 
-fn verify_json(
-    dir: &Path,
-    keys: &Path,
-    policy: &Path,
-    receipt: &Path,
-    proof: &Path,
-) -> Output {
+fn verify_json(dir: &Path, keys: &Path, policy: &Path, receipt: &Path, proof: &Path) -> Output {
     zkagent(
         &[
             "verify",
@@ -132,7 +129,10 @@ fn a_json_accept_is_a_document_and_still_exits_zero() {
         serde_json::from_str(&text).unwrap_or_else(|e| panic!("stdout is not JSON ({e}): {text}"));
     assert_eq!(doc["verdict"], "accept");
     assert_eq!(doc["reason_code"], serde_json::Value::Null);
-    assert_eq!(doc["format"], 2, "the artifact format version must be named");
+    assert_eq!(
+        doc["format"], 2,
+        "the artifact format version must be named"
+    );
     assert_eq!(
         doc["execution_id"], 1001,
         "the verdict must name the execution it is about"
