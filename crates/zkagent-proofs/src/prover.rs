@@ -20,20 +20,24 @@
 //! misinterpreting bytes.
 
 use ark_bn254::Bn254;
-use ark_groth16::{Groth16, PreparedVerifyingKey, Proof, ProvingKey, VerifyingKey};
+use ark_groth16::{Groth16, ProvingKey, VerifyingKey};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_snark::SNARK;
 use ark_std::rand::rngs::StdRng;
 use ark_std::rand::SeedableRng;
-use serde::{Deserialize, Serialize};
 
 use zkagent_core::{Action, Policy, Receipt, MAX_ACTIONS};
 
 use crate::circuit::{build_circuit, public_inputs, CircuitField};
 
-/// On-disk artifact format version. Bump on any change to the circuit, the
-/// public-input order, or the encoding.
-pub const FORMAT_VERSION: u32 = 2;
+// The artifact format, the proof envelope, verifying-key parsing and the
+// public-input order all live in `zkagent-wire` now. They are re-exported here so
+// existing call sites keep working, but a verifier should import them from
+// `zkagent_wire` directly — that is what lets a checking-only build drop the
+// prover from its dependency tree.
+pub use zkagent_wire::{prepare, verifying_key_from_bytes, ProofBytes, FORMAT_VERSION};
+
+use zkagent_wire::{encode_inputs, WireError};
 
 /// A Groth16 proving key plus the verifier's key, produced by a setup run.
 pub struct Keys {
@@ -167,72 +171,19 @@ pub fn prove(
     })
 }
 
-/// A serialised proof plus the public inputs it commits to.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ProofBytes {
-    /// Artifact format version.
-    pub format_version: u32,
-    /// The public inputs, in circuit order, as hex-encoded canonical field
-    /// encodings. Hex rather than decimal so the bytes are unambiguous and a
-    /// reader can diff two artifacts without parsing big integers.
-    pub public_inputs: Vec<String>,
-    /// Compressed proof bytes.
-    pub proof: Vec<u8>,
-}
-
-impl ProofBytes {
-    /// Parses the raw proof back into a `Proof`.
-    pub fn to_proof(&self) -> Result<Proof<Bn254>, ProverError> {
-        Proof::<Bn254>::deserialize_compressed(&self.proof[..])
-            .map_err(|e| ProverError::Serialise(e.to_string()))
-    }
-
-    /// Parses the public inputs back into field elements.
-    pub fn public_inputs_fr(&self) -> Result<Vec<CircuitField>, ProverError> {
-        self.public_inputs
-            .iter()
-            .map(|s| {
-                let bytes = hex::decode(s).map_err(|e| ProverError::Serialise(e.to_string()))?;
-                CircuitField::deserialize_compressed(&bytes[..])
-                    .map_err(|e| ProverError::Serialise(e.to_string()))
-            })
-            .collect()
-    }
-}
-
-/// Encodes field elements as hex canonical bytes, for the artifact.
-fn encode_inputs(inputs: &[CircuitField]) -> Result<Vec<String>, ProverError> {
-    inputs
-        .iter()
-        .map(|f| {
-            let mut bytes = Vec::new();
-            f.serialize_compressed(&mut bytes)
-                .map_err(|e| ProverError::Serialise(e.to_string()))?;
-            Ok(hex::encode(bytes))
-        })
-        .collect()
-}
-
-/// Deserialises a verifying key from its compressed bytes.
-pub fn verifying_key_from_bytes(bytes: &[u8]) -> Result<VerifyingKey<Bn254>, ProverError> {
-    VerifyingKey::<Bn254>::deserialize_compressed(bytes)
-        .map_err(|e| ProverError::Serialise(e.to_string()))
-}
-
 /// Deserialises a proving key from its compressed bytes.
+///
+/// Stays here rather than in `zkagent-wire`: a proving key is a prover artifact,
+/// and moving it would drag the prover's concerns back into the wire crate.
 pub fn proving_key_from_bytes(bytes: &[u8]) -> Result<ProvingKey<Bn254>, ProverError> {
     ProvingKey::<Bn254>::deserialize_compressed(bytes)
         .map_err(|e| ProverError::Serialise(e.to_string()))
 }
 
-/// Prepares a verifying key for repeated verification.
-///
-/// Returns a `Result` rather than panicking: a verifier processes artifacts
-/// from untrusted peers, and a hostile or corrupted verifying key must be a
-/// rejection, not a crash. (An earlier version used `expect` here, which broke
-/// the "never panics on hostile input" invariant.)
-pub fn prepare(vk: &VerifyingKey<Bn254>) -> Result<PreparedVerifyingKey<Bn254>, ProverError> {
-    Groth16::<Bn254>::process_vk(vk).map_err(|e| ProverError::VerifyingKey(format!("{e:?}")))
+impl From<WireError> for ProverError {
+    fn from(e: WireError) -> Self {
+        ProverError::Serialise(e.to_string())
+    }
 }
 
 /// Errors from the prover.

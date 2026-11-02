@@ -29,8 +29,11 @@
 use ark_bn254::Bn254;
 use ark_groth16::Groth16;
 use zkagent_core::{Policy, Receipt};
-use zkagent_proofs::circuit::public_inputs;
-use zkagent_proofs::prover::{prepare, verifying_key_from_bytes, ProofBytes, FORMAT_VERSION};
+// Imported from `zkagent-wire`, not from the proving crate: the statement and the
+// artifact format are what a verifier needs, and depending on `zkagent-proofs` for
+// them pulled `ark-r1cs-std`, `ark-relations` and `ark-poly` into every
+// checking-only build. See `docs/CODE-MAP.md`.
+use zkagent_wire::{prepare, public_inputs, verifying_key_from_bytes, ProofBytes, FORMAT_VERSION};
 
 /// The outcome of a verification.
 #[derive(Debug, Clone, PartialEq, Eq)]

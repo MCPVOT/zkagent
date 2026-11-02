@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/zkagent-core",
+    "crates/zkagent-wire",
     "crates/zkagent-proofs",
     "crates/zkagent-verifier",
     "crates/zkagent-service",

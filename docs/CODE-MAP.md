@@ -10,6 +10,7 @@ neither lives in someone's memory.
 | Crate | Owns | LOC |
 |---|---|---:|
 | `zkagent-core` | vocabulary: `Policy`, `Receipt`, `Action`, canonical encoding, Ed25519 authority, replay set | 1 212 |
+| `zkagent-wire` | the statement and the artifact: public-input order, `ProofBytes`, `FORMAT_VERSION`, verifying-key parsing. No circuit, no r1cs | 271 |
 | `zkagent-ipfs` | content addressing only: CIDv1, the manifest, block sources (no node) | 1 379 |
 | `zkagent-proofs` | the circuit and the prover | 1 099 |
 | `zkagent-verifier` | pure verification: policy + receipt + proof → verdict, no state | 561 |
@@ -23,6 +24,7 @@ neither lives in someone's memory.
 zkagent-core       -> nothing            # the vocabulary depends on nothing
 zkagent-ipfs       -> nothing            # content addressing is standalone
 zkagent-verifier   -> not zkagent-service  # the verifier has no host state
+zkagent-verifier   -> not zkagent-proofs   # and it does not carry the prover
 zkagent-service    -> not a shell        # the service must not own an interface
 ```
 
@@ -32,37 +34,38 @@ interfaces point inward, never the other way.
 ## Targets (debt, reported every run)
 
 ```
-zkagent-verifier -> not zkagent-proofs
-shell            -> zkagent-service only
+shell -> zkagent-service only
 ```
 
-Measured today:
+## Paid off: the verifier no longer carries the prover
 
-```
-$ cargo tree -p zkagent-verifier -e normal | wc -l
-261
-$ cargo tree -p zkagent-verifier -e normal | grep -cE 'ark-r1cs-std|rayon'
-11
-```
+`zkagent-verifier` is documented as *"a proof and inputs become a verdict, no
+state"*. It used to compile **261 crates**, including `ark-r1cs-std`,
+`ark-relations`, `ark-poly` and `ark-crypto-primitives` — the constraint-system and
+polynomial machinery only a prover needs — because `ProofBytes`, `FORMAT_VERSION`,
+`verifying_key_from_bytes` and `public_inputs()` all lived inside
+`zkagent-proofs::{prover, circuit}`.
 
-The verifier — *"a proof and inputs become a verdict, no state"* — compiles 261
-crates, including `ark-r1cs-std`, `ark-relations`, `ark-poly` and
-`ark-crypto-primitives`: the constraint-system and polynomial machinery that only
-a **prover** needs at build time. A light verifier (a phone build, an on-chain
-sidecar, a host that only checks receipts) pays for the whole proving stack.
+`zkagent-wire` now owns the statement and the wire format, and both the prover and
+the verifier depend on it. Measured after the move:
 
-**Why it happens.** The artifact types are trapped in the proving crate:
-`ProofBytes`, `FORMAT_VERSION`, `verifying_key_from_bytes` and `public_inputs()`
-all live under `zkagent-proofs::{prover, circuit}`. Verification needs the wire
-format and the public-input order; it does not need the circuit.
+| | before | after |
+|---|---:|---:|
+| `cargo tree -p zkagent-verifier -e normal \| wc -l` | 261 | **221** |
+| `… \| grep -c ark-r1cs-std` | 1 | **0** |
+| `… \| grep -c ark-poly` | 2 | 2 |
 
-**The fix, when it is taken.** Extract `zkagent-wire` (or `zkagent-artifact`):
-`ProofBytes`, `FORMAT_VERSION`, key/proof (de)serialisation, and the canonical
-`public_inputs()` + arity. Then `zkagent-proofs` keeps only the circuit and the
-prover, and depends on `zkagent-wire`; `zkagent-verifier` depends on
-`zkagent-wire` too. That single move is what turns the first target green, and it
-is most of the second: once the shells can import their types from the service's
-re-exports, they stop reaching into three crates to do one job.
+Forty crates lighter, and the constraint system is gone from the verifier entirely.
+
+**What still remains, and why it is not a regression.** `ark-poly` still appears
+because `ark-ec` (the pairing arithmetic) depends on it; `ark-crypto-primitives`
+still appears because `ark-groth16` uses it for `process_vk`. Both are part of
+performing a pairing check, not of building a circuit. The avoidable dependency was
+`ark-r1cs-std`, and it is now zero.
+
+The remaining shell target is smaller but real: once `zkagent-service` re-exports
+the artifact types, `zkagent-cli` and `zkagent-mcp` can import them from one place
+instead of reaching into `proofs`/`ipfs`/`verifier` directly.
 
 ## Why the shells reaching past the service is a real problem
 
