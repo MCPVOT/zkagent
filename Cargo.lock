@@ -1796,7 +1796,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "hex",
@@ -1807,7 +1807,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -1824,7 +1824,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-ipfs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cid",
  "serde",
@@ -1837,7 +1837,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1846,7 +1846,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-proofs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -1868,7 +1868,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-service"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "hex",
  "serde",
@@ -1884,7 +1884,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-verifier"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -1904,7 +1904,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-wire"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ark-bn254",
  "ark-ec",
