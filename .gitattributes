@@ -1,0 +1,21 @@
+# Line-ending policy for a repo shared between a Linux seat and a Windows laptop.
+#
+# Every tracked file is LF today (verified: 0 CR bytes across all blobs), so this file changes nothing
+# retroactively. It exists so a Windows checkout cannot inject CRLF into a later commit: with
+# `core.autocrlf=true` on Windows, git converts on checkout and back on commit, but that only protects a
+# repository that already states its policy. Without this file, a tool that rewrites a file (rustfmt, an
+# editor, a formatter with its own defaults) can stage CRLF and nothing in CI looks for it.
+
+* text=auto eol=lf
+
+# Binary or generated content must never be line-ending converted.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+
+# Test fixtures that may intentionally contain CRLF (mail-style payloads) are left alone.
+*.crlf.txt -text
