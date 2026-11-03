@@ -78,6 +78,12 @@ pub struct ReceiptJson {
     pub chain_id: u64,
     /// Unique id of this execution; must be non-zero.
     pub execution_id: u64,
+    /// Merkle root over the padded per-action trace digests, as 64 hex chars.
+    ///
+    /// The prover fills this in; a verifier compares it against the root the
+    /// circuit rebuilt from the (private) actions.
+    #[serde(with = "zkagent_core::receipt::trace_root_hex")]
+    pub trace_root: [u8; zkagent_core::receipt::TRACE_ROOT_BYTES],
 }
 
 impl From<&Receipt> for ReceiptJson {
@@ -88,6 +94,7 @@ impl From<&Receipt> for ReceiptJson {
             completed_at: r.completed_at,
             chain_id: r.chain_id,
             execution_id: r.execution_id,
+            trace_root: r.trace_root,
         }
     }
 }
@@ -100,6 +107,7 @@ impl From<&ReceiptJson> for Receipt {
             completed_at: r.completed_at,
             chain_id: r.chain_id,
             execution_id: r.execution_id,
+            trace_root: r.trace_root,
         }
     }
 }

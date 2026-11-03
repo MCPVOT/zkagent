@@ -153,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
 
         (work / "receipt.json").write_text(
-            '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001}'
+            '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001,"trace_root":"0000000000000000000000000000000000000000000000000000000000000000"}'
         )
         (work / "actions.json").write_text(
             '[{"target":3,"amount":250,"trace_digest":11},{"target":7,"amount":150,"trace_digest":22}]'

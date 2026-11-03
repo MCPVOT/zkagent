@@ -144,6 +144,7 @@ fn receipt() -> Receipt {
         completed_at: 1_500,
         chain_id: 1,
         execution_id: 8_001,
+        trace_root: [0u8; 32],
     }
 }
 
@@ -187,7 +188,7 @@ fn fixture(root: &Path) -> Fixture {
 
     fs::write(
         &receipt_path,
-        r#"{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":8001}"#,
+        r#"{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":8001,"trace_root":"0000000000000000000000000000000000000000000000000000000000000000"}"#,
     )
     .expect("receipt");
     fs::write(
@@ -196,9 +197,15 @@ fn fixture(root: &Path) -> Fixture {
     )
     .expect("actions");
 
-    let proof_bytes =
-        zkagent_service::prove(&keys, &policy, &receipt(), &actions()).expect("prove");
-    zkagent_service::write_json(&proof, &proof_bytes).expect("write proof");
+    let proven = zkagent_service::prove(&keys, &policy, &receipt(), &actions()).expect("prove");
+    zkagent_service::write_json(&proof, &proven.proof).expect("write proof");
+    // Write the receipt the prover completed, so the published bytes carry the
+    // trace root the proof commits to.
+    zkagent_service::write_json(
+        &receipt_path,
+        &zkagent_service::ReceiptJson::from(&proven.receipt),
+    )
+    .expect("write receipt");
 
     Fixture {
         keys,

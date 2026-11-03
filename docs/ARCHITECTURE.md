@@ -167,16 +167,22 @@ represent the same policy, a signature on one would authorise the other.
 1 max_per_action  5 receipt_action_count
 2 expires_at      6..13 allowed_targets[0..8]   (padded by repeating target[0])
 3 completed_at    14   execution_id              (anti-replay; must be non-zero)
+                  15   trace_root                (MiMC Merkle root over the 8 digests)
 ```
 
 The order is fixed by **allocation order inside the circuit**, and
-`public_inputs()` must reproduce it exactly. `execution_id` is allocated last,
-after the allow-list, precisely because the vector is ordered by allocation
-rather than by meaning — allocating it next to the other receipt scalars (the
-natural place) permutes the vector and makes every honest proof fail with
+`public_inputs()` must reproduce it exactly. `execution_id` is allocated after
+the allow-list — not next to the other receipt scalars, where it would naturally
+go — and `trace_root` is appended after that, precisely because the vector is
+ordered by allocation rather than by meaning. Allocating either one in the
+semantic order permutes the vector and makes every honest proof fail with
 `InvalidProof`. A test asserts the constraint system's `instance_assignment`
 equals `public_inputs()` element by element, and it has been verified to fail
 when the order is permuted.
+
+`trace_root` is a full 254-bit field element, never truncated to 64 bits: a
+64-bit commitment leaves only ~2^32 collision work, which is not a commitment
+worth the name.
 
 `public_inputs(policy, receipt)` in `zkagent-proofs::circuit` is the **only**
 definition of this order. A verifier that assembles the vector by hand can
@@ -195,11 +201,21 @@ proof about different values.
 | C6 | `#(amount_i ≠ 0) = receipt_action_count` | the claimed count is the real count |
 | C7 | `completed_at < expires_at` | the execution happened while the policy was live |
 | C8 | `execution_id ≠ 0` | an id-0 receipt silently disables a verifier's anti-replay set |
+| C9 | `Merkle(d_0 … d_7) = receipt.trace_root` | binds the private trace digests to a public commitment, so the proof is about *this* execution |
 
 C4 deserves a note: in a field, a product is zero exactly when one factor is
 zero, so the product constraint is precisely "the target equals some allowed
 slot". It needs no boolean disjunction gadget (this arkworks line only exposes
 `or` on the allocated boolean variant) and it is cheaper and easier to audit.
+
+C9 is the one hash in the circuit: MiMC-2n/n over BN254's scalar field, S-box
+`x^5`, 110 rounds, compression `P(P(a) + b)`, round `i` adding
+`SHA256("zkagent-mimc-v1" ‖ i_le_u32)` reduced into the field. Eight leaves
+(one padded `trace_digest` per action slot) make a depth-3 tree of seven
+internal nodes at 660 constraints each, and the gadget's root is compared to the
+public input. `crates/zkagent-proofs/src/merkle.rs` holds both the gadget and
+the native hash, and a unit test asserts they agree — a prover and a circuit
+that disagree here reject every honest proof.
 
 ### 4.5 Verification order (and why each step exists)
 
@@ -232,7 +248,7 @@ A verification ends in a `Verdict`: `Accept`, or `Reject(RejectReason)` where
   ```json
   {"verdict":"reject","reason_code":"public_input_mismatch",
    "reason":"public inputs do not match the supplied policy/receipt",
-   "execution_id":1001,"format":2}
+   "execution_id":1001,"format":3}
   ```
 
 `reason_code` is `RejectReason::code()` and is the contract a harness branches
@@ -285,13 +301,16 @@ system.
   arithmetic only enforces what was written.
 * **It does not survive a compromised human key.** Whoever holds the signing key
   can authorise any policy.
-* **`trace_digest` is bound but unconstrained in v0.** It is a witness value
-  that a v2 will bind to a Merkle root of the transcript. Today it proves
-  nothing on its own — stated plainly rather than implied. PACE [2608.17220]
-  calls exactly this a *field provenance* defect, and CVA [2607.21325] names
-  execution binding as the open problem in the field. Two independent research
-  slices flagged it in the same review, which is why it is stated twice.
 
+**Cost of closing the trace-binding gap.** `trace_digest` is no longer a witness
+to nothing: C9 constrains a MiMC Merkle root over the padded digests to a public
+receipt field (`FORMAT_VERSION` 3). Measured, not estimated: seven internal
+nodes × 660 constraints = **4,620** constraints for the tree, taking the circuit
+from 3,333 to **7,442** constraints (2.23×), and the public-input vector from 15
+to 16. The trade is deliberate — an unconstrained `trace_digest` was a field
+provenance defect (PACE [2608.17220]; CVA [2607.21325] names execution binding
+as the open problem), and an execution attestation that does not commit to the
+execution is not one.
 ### 5.4 Known gaps to close before "public"
 
 1. **~~No nonce / execution id.~~ CLOSED.** `Receipt` now carries an
@@ -359,8 +378,10 @@ a to-do list.
 1. **Execution binding.** A proof binds the statement that was written, not the
    behaviour that occurred. Every agent-domain paper in `06` proves one action
    is compliant; PACE [2608.17220] shows the field provenance defect; CVA
-   [2607.21325] names execution binding as the open problem. Our unconstrained
-   `trace_digest` is an instance of it.
+   [2607.21325] names execution binding as the open problem. Our `trace_digest`
+   is now committed to a public Merkle root (§4.4 C9), which closes the *field
+   provenance* half; the remaining half — a digest that corresponds to a real
+   side effect — still needs an oracle or a TEE.
 2. **Completeness.** Omission is the attack that survives single-action proofs.
    Our receipt's `count` + `total` is an *arithmetic* completeness argument
    relative to the receipt — not completeness relative to reality, because the
@@ -400,15 +421,15 @@ Measured on this implementation, not estimated:
 
 | Metric | Value | How |
 |---|---|---|
-| constraints | **3333** | `constraint_count_is_sane` test (`--nocapture`) |
-| public inputs | **15** | asserted by the same test (`num_instance_variables == 16`, incl. the constant-one slot) |
+| constraints | **7442** | `constraint_count_is_sane` test (`--nocapture`) |
+| public inputs | **16** | asserted by the same test (`num_instance_variables == 17`, incl. the constant-one slot) |
 | proof | **128 B** (2 170 B JSON artifact) | `proof.json` |
 | verifying key | **712 B** | `keys/vk.bin` |
 | proving key | **649 KB** | `keys/pk.bin` |
 | binary | 2.1 MB | release build |
 | end-to-end | **ACCEPT** | real CLI run: setup → policy → prove → verify |
 | setup (release, parallel) | 0.19 s | wall clock |
-| prove (release, parallel) | **0.43–0.64 s** | 5 runs |
+| prove (release, parallel) | **0.66–0.70 s** | 3 runs, after the MiMC trace root added ~4.6k constraints |
 | prove (release, serial) | 1.02–1.16 s | 3 runs, `parallel` feature off |
 | verify (release) | **0.048–0.091 s** | 5 runs, incl. ~40 ms process startup |
 

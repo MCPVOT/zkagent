@@ -29,6 +29,7 @@ use ark_std::rand::SeedableRng;
 use zkagent_core::{Action, Policy, Receipt, MAX_ACTIONS};
 
 use crate::circuit::{build_circuit, public_inputs, CircuitField};
+use crate::merkle;
 
 // The artifact format, the proof envelope, verifying-key parsing and the
 // public-input order all live in `zkagent-wire` now. They are re-exported here so
@@ -38,6 +39,21 @@ use crate::circuit::{build_circuit, public_inputs, CircuitField};
 pub use zkagent_wire::{prepare, verifying_key_from_bytes, ProofBytes, FORMAT_VERSION};
 
 use zkagent_wire::{encode_inputs, WireError};
+
+/// What a successful [`prove`] produced: the receipt completed with its trace
+/// root, and the proof over it.
+///
+/// The receipt is returned rather than left for the caller to finish because the
+/// root is derived from the *private* witness. A caller that had to compute it
+/// by hand would either duplicate the hash (and drift) or publish a receipt the
+/// proof does not match.
+#[derive(Clone, Debug)]
+pub struct ProvenExecution {
+    /// The receipt as proven, with `trace_root` filled in from the witness.
+    pub receipt: Receipt,
+    /// The proof artifact, whose public inputs commit to `receipt`.
+    pub proof: ProofBytes,
+}
 
 /// A Groth16 proving key plus the verifier's key, produced by a setup run.
 pub struct Keys {
@@ -85,6 +101,7 @@ pub fn setup(seed: u64) -> Result<Keys, ProverError> {
         completed_at: 0,
         chain_id: 1,
         execution_id: 1,
+        trace_root: [0u8; 32],
     };
     let circuit = build_circuit(&policy, &receipt, &[]);
     let mut rng = StdRng::seed_from_u64(seed);
@@ -103,7 +120,7 @@ pub fn prove(
     policy: &Policy,
     receipt: &Receipt,
     actions: &[Action],
-) -> Result<ProofBytes, ProverError> {
+) -> Result<ProvenExecution, ProverError> {
     // Fail fast with a readable reason.
     receipt
         .check_against(policy)
@@ -133,6 +150,14 @@ pub fn prove(
             )));
         }
     }
+
+    // The trace root is the prover's job, not the caller's: it is a commitment
+    // over the private digests, so only the prover can compute it. Filling it in
+    // here is what makes an honest run self-consistent end to end — the receipt
+    // that comes back is exactly the one the public inputs commit to.
+    let mut proven_receipt = receipt.clone();
+    proven_receipt.trace_root = merkle::root_bytes_for_actions(actions);
+    let receipt = &proven_receipt;
 
     let circuit = build_circuit(policy, receipt, actions);
 
@@ -164,10 +189,14 @@ pub fn prove(
         .serialize_compressed(&mut proof_bytes)
         .map_err(|e| ProverError::Serialise(e.to_string()))?;
 
-    Ok(ProofBytes {
-        format_version: FORMAT_VERSION,
-        public_inputs: encode_inputs(&public_inputs(policy, receipt))?,
-        proof: proof_bytes,
+    let public = encode_inputs(&public_inputs(policy, &proven_receipt))?;
+    Ok(ProvenExecution {
+        receipt: proven_receipt,
+        proof: ProofBytes {
+            format_version: FORMAT_VERSION,
+            public_inputs: public,
+            proof: proof_bytes,
+        },
     })
 }
 
@@ -251,18 +280,26 @@ mod tests {
             completed_at: 1_500,
             chain_id: 1,
             execution_id: 1,
+            trace_root: [0u8; 32],
         }
     }
 
     #[test]
     fn setup_and_prove_produces_a_proof() {
         let keys = setup(7).unwrap();
-        let proof = prove(&keys, &policy(), &receipt(), &actions()).unwrap();
-        assert_eq!(proof.format_version, FORMAT_VERSION);
-        assert!(!proof.proof.is_empty());
-        assert_eq!(proof.public_inputs.len(), 7 + 8);
+        let proven = prove(&keys, &policy(), &receipt(), &actions()).unwrap();
+        assert_eq!(proven.proof.format_version, FORMAT_VERSION);
+        assert!(!proven.proof.proof.is_empty());
+        assert_eq!(proven.proof.public_inputs.len(), 8 + 8);
         // The proof must round-trip through its serialised form.
-        assert!(proof.to_proof().is_ok());
+        assert!(proven.proof.to_proof().is_ok());
+        // The prover fills in the root: the receipt it returns is the one the
+        // proof commits to, not the zero placeholder the caller passed in.
+        assert_eq!(
+            proven.receipt.trace_root,
+            merkle::root_bytes_for_actions(&actions())
+        );
+        assert_ne!(proven.receipt.trace_root, [0u8; 32]);
     }
 
     #[test]
@@ -279,6 +316,7 @@ mod tests {
             completed_at: 1_500,
             chain_id: 1,
             execution_id: 1,
+            trace_root: [0u8; 32],
         };
         assert!(matches!(
             prove(&keys, &policy(), &r, &bad),
@@ -300,6 +338,7 @@ mod tests {
             completed_at: 1_500,
             chain_id: 1,
             execution_id: 1,
+            trace_root: [0u8; 32],
         };
         assert!(matches!(
             prove(&keys, &policy(), &r, &bad),

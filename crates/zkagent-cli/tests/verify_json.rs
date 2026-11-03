@@ -64,7 +64,7 @@ fn prepared(dir: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     let receipt = dir.join("receipt.json");
     std::fs::write(
         &receipt,
-        r#"{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001}"#,
+        r#"{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001,"trace_root":"0000000000000000000000000000000000000000000000000000000000000000"}"#,
     )
     .unwrap();
     let actions = dir.join("actions.json");
@@ -130,7 +130,7 @@ fn a_json_accept_is_a_document_and_still_exits_zero() {
     assert_eq!(doc["verdict"], "accept");
     assert_eq!(doc["reason_code"], serde_json::Value::Null);
     assert_eq!(
-        doc["format"], 2,
+        doc["format"], 3,
         "the artifact format version must be named"
     );
     assert_eq!(
@@ -146,12 +146,15 @@ fn a_json_reject_names_the_reason_as_a_code_not_a_sentence() {
 
     // An honest proof for an inflated total: the receipt no longer matches the
     // public inputs the circuit produced, which is the rejection the docs
-    // describe for `total_amount: 999`.
-    std::fs::write(
-        &receipt,
-        r#"{"total_amount":999,"action_count":2,"completed_at":1500,"chain_id":1,"execution_id":1001}"#,
-    )
-    .unwrap();
+    // describe for `total_amount: 999`. The receipt on disk already carries the
+    // prover's trace root, so change only the total.
+    let honest = std::fs::read_to_string(&receipt).expect("receipt");
+    let tampered = honest.replace("\"total_amount\": 400", "\"total_amount\": 999");
+    assert_ne!(
+        honest, tampered,
+        "the fixture must contain the honest total"
+    );
+    std::fs::write(&receipt, tampered).unwrap();
 
     let out = verify_json(dir.path(), &keys, &policy, &receipt, &proof);
     let text = stdout(&out);

@@ -45,14 +45,20 @@ pub type CircuitField = ark_bn254::Fr;
 
 /// On-disk artifact format version. Bump on any change to the circuit, the
 /// public-input order, or the encoding.
-pub const FORMAT_VERSION: u32 = 2;
-
-/// The number of public inputs for the current circuit.
 ///
-/// Seven scalars, the padded allow-list, and the execution id. Kept next to the
-/// function that builds the vector so the two cannot disagree silently; the
-/// proving crate asserts it against the constraint system's arity.
-pub const PUBLIC_INPUT_COUNT: usize = 7 + MAX_POLICY_TARGETS + 1;
+/// v3 added `trace_root`: the receipt carries a Merkle root over the private
+/// action digests and the circuit constrains it. An artifact from v2 has no such
+/// input and must be refused rather than reinterpreted.
+pub const FORMAT_VERSION: u32 = 3;
+
+/// The number of instance variables for the current circuit, including the
+/// leading constant-one slot.
+///
+/// Seven scalars (three policy, three receipt, the execution id), the padded
+/// allow-list, and the trace root. Kept next to the function that builds the
+/// vector so the two cannot disagree silently; the proving crate asserts it
+/// against the constraint system's arity.
+pub const PUBLIC_INPUT_COUNT: usize = 7 + MAX_POLICY_TARGETS + 1 + 1;
 
 /// The ordered public-input vector a verifier must supply to
 /// `Groth16::verify_proof`.
@@ -79,9 +85,13 @@ pub fn public_inputs(policy: &Policy, receipt: &Receipt) -> Vec<CircuitField> {
             .unwrap_or(0);
         out.push(CircuitField::from(v));
     }
-    // Anti-replay id last, so the earlier positions keep their meaning for
-    // anyone reading an older artifact's public inputs.
+    // Anti-replay id, so the earlier positions keep their meaning for anyone
+    // reading an older artifact's public inputs.
     out.push(CircuitField::from(receipt.execution_id));
+    // The trace root is LAST, for the same reason: every existing index keeps
+    // its meaning. It is a full field element — never truncated to 64 bits,
+    // which would leave only ~2^32 collision work.
+    out.push(CircuitField::from_le_bytes_mod_order(&receipt.trace_root));
     out
 }
 

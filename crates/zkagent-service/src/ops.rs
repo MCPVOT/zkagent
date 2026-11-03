@@ -33,7 +33,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use zkagent_core::{Action, Authority, Policy, Receipt, SeenExecutions, SECRET_KEY_BYTES};
-use zkagent_proofs::prover::{prove as prove_circuit, setup as run_setup, ProofBytes};
+use zkagent_proofs::prover::{
+    prove as prove_circuit, setup as run_setup, ProofBytes, ProvenExecution,
+};
 use zkagent_verifier::{verify as verify_proof, RejectReason, Verdict};
 
 use crate::error::ServiceError;
@@ -183,6 +185,12 @@ pub fn authorize(
 
 /// Produce the Groth16 proof for an execution.
 ///
+/// The returned [`ProvenExecution`] carries the receipt with its `trace_root`
+/// filled in from the private witness. A host MUST publish *that* receipt (or
+/// write it back over the one it read), because the proof's public inputs commit
+/// to it: the whole point of the root is that a verifier recomputes it from the
+/// receipt it holds.
+///
 /// # Errors
 /// Returns [`ServiceError::Io`] when a file cannot be read,
 /// [`ServiceError::Malformed`] when an artifact cannot be parsed, and
@@ -192,7 +200,7 @@ pub fn prove(
     policy_path: &Path,
     receipt: &Receipt,
     actions: &[Action],
-) -> Result<ProofBytes, ServiceError> {
+) -> Result<ProvenExecution, ServiceError> {
     let signed = read_signed_policy(policy_path)?;
     let policy = signed
         .policy

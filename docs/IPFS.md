@@ -37,9 +37,9 @@ check the hash* — and that is what this does. Connecting it to a real node is 
   "version": 1,
   "circuit": {
     "vk": { "cid": "bafkreibjyua75…", "bytes": 712, "sha256": "…" },
-    "constraints": 3333,
-    "public_inputs": 15,
-    "format_version": 2
+    "constraints": 7442,
+    "public_inputs": 16,
+    "format_version": 3
   },
   "policy":  { "cid": "bafkreibtnwjhs…", "bytes": 421, "sha256": "…" },
   "receipt": { "cid": "bafkreifupy33cr…", "bytes": 118, "sha256": "…" },

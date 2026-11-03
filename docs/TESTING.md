@@ -15,7 +15,7 @@ commitment, and that an empty allow-list is refused.
 
 ### Tier 1 — circuit tests, including one negative per constraint
 
-Every constraint `C1..C8` needs a test where a witness **violating that
+Every constraint `C1..C9` needs a test where a witness **violating that
 constraint** fails to satisfy the system. A constraint with no negative test is
 a constraint nobody has checked is load-bearing.
 

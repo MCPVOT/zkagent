@@ -46,8 +46,9 @@ These are stated in `docs/ARCHITECTURE.md` and are **not** vulnerabilities:
 - there is no revocation before expiry;
 - there is no on-chain verifier;
 - Ed25519 signature verification is off-chain;
-- `trace_digest` is bound in the witness but not constrained, so it does not
-  prove anything about the transcript yet;
+- the per-action `trace_digest` is committed to a public MiMC Merkle root and
+  constrained in-circuit, but nothing ties a digest to a real-world side effect:
+  that still needs an oracle or a TEE that signs the trace;
 - the replay ledger only grows and assumes a single writer.
 
 Reporting one of those is still welcome, but it will be treated as a design

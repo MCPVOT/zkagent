@@ -57,7 +57,8 @@ cargo run -- policy \
 
 # 3. the agent proves its execution (private witness lives here)
 cat > receipt.json <<'JSON'
-{"total_amount": 400, "action_count": 2, "completed_at": 1500, "chain_id": 1, "execution_id": 1001}
+{"total_amount": 400, "action_count": 2, "completed_at": 1500, "chain_id": 1, "execution_id": 1001,
+ "trace_root": "0000000000000000000000000000000000000000000000000000000000000000"}
 JSON
 cat > actions.json <<'JSON'
 [{"target": 3, "amount": 250, "trace_digest": 11},
@@ -75,7 +76,7 @@ cargo run -- verify --keys keys/ --policy policy.json \
 cargo run -- verify --json --keys keys/ --policy policy.json \
   --receipt receipt.json --proof proof.json --now 1600
 # -> {"verdict":"accept","reason_code":null,"reason":null,
-#     "execution_id":1001,"format":2}
+#     "execution_id":1001,"format":3}
 ```
 
 `--json` keeps the exit codes (0 accept, 1 reject, 2 could not verify) and adds
@@ -119,8 +120,9 @@ to a public network. See `docs/ARCHITECTURE.md` §"Trusted setup".
 ## Design decisions worth knowing before you read the code
 
 1. **The policy is public; the execution is private.** An earlier draft hid the
-   policy inside the commitment, which forces an in-circuit hash. Hiding the
-   *execution* is the property that matters, and it needs no hash at all.
+   policy inside the commitment, which forces an in-circuit hash of public data.
+   Hiding the *execution* is the property that matters; the only hash left
+   commits to the private trace digests (a MiMC Merkle root, §4.4 C9).
 2. **Every compared integer is a 64-bit `UInt`.** Without the bit
    decomposition, a prover can supply `p − k` and pass a "sums to zero" check
    while real value moved.
@@ -181,7 +183,7 @@ zkagent publish --keys keys/ --policy policy.json --receipt receipt.json \
 # policy:  bafkreiedes63…
 # receipt: bafkreifupy33…
 # proof:   bafkreidyu7hu…
-# circuit: 3333 constraints, 15 public inputs, format v2
+# circuit: 7442 constraints, 16 public inputs, format v3
 
 zkagent verify-bundle --manifest attestation.json --blocks blocks/ --now 1600
 # ACCEPT
