@@ -8,7 +8,7 @@
 //! dishonest one could put anything, and the verifier learned nothing. The fix
 //! is a commitment the circuit itself builds: the receipt publishes a Merkle root
 //! over the eight padded digests, the root is a public input, and
-//! [`root`](root) rebuilds the tree from the private leaves and is constrained
+//! [`root`] rebuilds the tree from the private leaves and is constrained
 //! to equal that input. Now the digests are bound: change one and no proof
 //! exists for the published root.
 //!

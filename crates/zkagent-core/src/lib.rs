@@ -8,7 +8,7 @@
 //! # The protocol in one paragraph
 //!
 //! A human defines a [`Policy`] (caps, expiry, chain, allow-list) and signs
-//! it. An agent executes some private [`Action`](receipt::Action)s inside that
+//! it. An agent executes some private [`Action`]s inside that
 //! policy and publishes a public [`Receipt`] (total, count, time, chain) plus
 //! a zero-knowledge proof. The proof demonstrates that *some* set of actions
 //! existed that (a) totals the receipt amount, (b) never exceeded the

@@ -132,6 +132,20 @@ def recommend(rows: list[dict]) -> list[str]:
     agg = aggregate(rows)
     out: list[str] = []
 
+    # 0. An explicit hand-off beats an inferred one. A unit that leaves work behind says so
+    #    at the moment it is recorded, while the author still remembers why; `next` then
+    #    reads that intent instead of inferring it from counters. Capped at three, newest
+    #    first, because a list nobody can finish is a list nobody starts.
+    hints: list[str] = []
+    for r in reversed(rows):
+        h = (r.get("next_hint") or "").strip()
+        if h and h not in hints:
+            hints.append(h)
+        if len(hints) == 3:
+            break
+    for h in hints:
+        out.append(f"handed off: {h}")
+
     # 1. A failure streak means stop repeating the approach.
     if agg["fail_streak"] >= 3:
         lf = agg["last_fail"] or {}
@@ -185,6 +199,10 @@ def cmd_record(args: argparse.Namespace) -> int:
         "commit": args.commit if getattr(args, "commit", None) else git_commit(),
         "format": format_version(),
     }
+    hint = (getattr(args, "next_hint", "") or "").strip()
+    if hint:
+        row["next_hint"] = hint
+        print(f"handed off: {hint}")
     append_row(row)
     print(f"recorded: {row['phase']} / {row['result']} / {row['action']}")
     return 0
@@ -232,6 +250,12 @@ def main(argv: list[str]) -> int:
         "--commit",
         default=None,
         help="commit the measurement was taken on (default: HEAD)",
+    )
+    r.add_argument(
+        "--next",
+        dest="next_hint",
+        default="",
+        help="what this unit leaves for the next session; `next` prints it first",
     )
     r.set_defaults(func=cmd_record)
 
