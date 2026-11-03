@@ -187,6 +187,27 @@ zkagent verify-bundle --manifest attestation.json --blocks blocks/ --now 1600
 # ACCEPT
 ```
 
+## Which version am I running?
+
+Three different things are called "version" in this project, and mixing them up
+is how a format mismatch becomes a mystery:
+
+```bash
+zkagent version
+# zkagent 0.1.1 (artifact format 2) commit 6f4be0f
+zkagent --json version
+# {"name":"zkagent","version":"0.1.1","format":2,"commit":"6f4be0f","dirty":false}
+```
+
+| field | what it answers |
+|---|---|
+| crate version | which code you are running |
+| `format` | which artifact format it can read; a mismatch is refused loudly, never guessed |
+| commit | which tree produced the binary; `(dirty)` means it was built from uncommitted changes |
+
+The same commit and format are stamped into every row of `docs/loop-ledger.jsonl`,
+so a number quoted from the ledger always points at a tree someone can check out.
+
 The manifest names all four artifacts by **CIDv1 (raw, sha2-256)**, and the
 verifying key's CID *is* the circuit identity — so a proof cannot be verified
 against a circuit other than the one it names. Every fetch is re-hashed: a

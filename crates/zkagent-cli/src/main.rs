@@ -33,6 +33,7 @@ use zkagent_service::{AuthorityKey, PolicySpec, Verdict};
 #[derive(Parser)]
 #[command(
     name = "zkagent",
+    version,
     about = "Zero-knowledge attestation of AI agent executions",
     long_about = "Prove that an AI agent's execution stayed inside a human-signed policy \
                   without revealing which actions it took."
@@ -50,6 +51,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Print the version, the artifact format and the commit this binary was built from.
+    Version,
     /// Run the circuit-specific trusted setup and write the key pair.
     Setup {
         /// Seed for the setup RNG. Fixed seeds are for tests only.
@@ -196,6 +199,33 @@ fn run() -> Result<ExitCode, String> {
     let cli = Cli::parse();
     let json_out = cli.json;
     match cli.command {
+        Command::Version => {
+            // Three different things are called "version" in this project and mixing them
+            // up is how a format mismatch becomes a mystery: the crate version (what code),
+            // FORMAT_VERSION (what artifacts it can read) and the commit (which tree).
+            let commit = option_env!("ZKAGENT_GIT_SHA").unwrap_or("unknown");
+            let dirty = option_env!("ZKAGENT_GIT_DIRTY").unwrap_or("0") == "1";
+            let format = zkagent_service::FORMAT_VERSION;
+            if json_out {
+                println!(
+                    "{{\"name\":\"zkagent\",\"version\":\"{}\",\"format\":{},\"commit\":\"{}\",\"dirty\":{}}}",
+                    env!("CARGO_PKG_VERSION"),
+                    format,
+                    commit,
+                    dirty
+                );
+            } else {
+                println!(
+                    "zkagent {} (artifact format {}) commit {}{}",
+                    env!("CARGO_PKG_VERSION"),
+                    format,
+                    commit,
+                    if dirty { " (dirty)" } else { "" }
+                );
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+
         Command::Setup { seed, out } => {
             let outcome = zkagent_service::setup(&out, seed).map_err(|e| e.to_string())?;
             println!(

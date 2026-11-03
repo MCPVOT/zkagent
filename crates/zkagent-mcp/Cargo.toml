@@ -1,10 +1,10 @@
 [package]
 name = "zkagent-mcp"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.89"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 description = "MCP server shell for zkagent: expose zero-knowledge agent attestation to any agent harness"
-license = "MIT"
+license.workspace = true
 repository = "https://github.com/MCPVOT/zkagent"
 readme = "../../README.md"
 keywords = ["zero-knowledge", "attestation", "mcp", "agent", "harness"]

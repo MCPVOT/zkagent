@@ -1,10 +1,10 @@
 [package]
 name = "zkagent-service"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.89"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 description = "Embeddable operations layer for zkagent: setup, authorise, prove, verify"
-license = "MIT"
+license.workspace = true
 repository = "https://github.com/MCPVOT/zkagent"
 readme = "../../README.md"
 keywords = ["zero-knowledge", "attestation", "groth16", "agent", "embedding"]
