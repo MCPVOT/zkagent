@@ -95,15 +95,20 @@ echo '{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"exe
 echo '[{"target":3,"amount":250,"trace_digest":11},{"target":7,"amount":150,"trace_digest":22}]' > actions.json
 $Z prove  --keys keys/ --policy policy.json --receipt receipt.json --actions actions.json --out proof.json
 $Z verify --keys keys/ --policy policy.json --receipt receipt.json --proof proof.json --now 1600
+$Z publish --keys keys/ --policy policy.json --receipt receipt.json \
+           --proof proof.json --actions actions.json --out attestation.json --blocks blocks/
 ```
 ```
 ACCEPT
-inputs: 14 | format: 1 | proof bytes: 128
-pk.bin 648816   vk.bin 712   proof.json 2170
+circuit:   7442 constraints, 16 public inputs, format v3
+pk.bin 1449328   vk.bin 776   proof.json 2319
 ```
-Release, with `parallel`: prove 0.66–0.70 s, verify 0.048–0.091 s (see the
-timings table below for the serial comparison; that table predates the MiMC
-trace root, which added ~4.6k constraints).
+
+Format 3, release build, measured on the seat (mcpvot, Ryzen 5 4600H, 2026-11-02):
+setup 0.12 s, prove 0.680–0.694 s over three runs, verify 0.007 s, publish 0.021 s.
+The earlier range in the timings table below (prove 0.66–0.70 s, verify 0.048–0.091 s)
+was taken on a different machine before the MiMC trace root; it is history, not a
+comparison, and the two must not be quoted as a speedup.
 
 Negative controls, all exercised through the real binary:
 

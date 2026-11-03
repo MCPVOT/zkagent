@@ -73,6 +73,46 @@ class Rules(unittest.TestCase):
             check.check_rule("zkagent-core", "looks fine to me", self.graph())
 
 
+class WorkspaceVersions(unittest.TestCase):
+    """One version, one copy — the drift that hid behind a workspace bump."""
+
+    def setUp(self) -> None:
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = pathlib.Path(self.tmp.name)
+        (self.root / "crates" / "zkagent-wire").mkdir(parents=True)
+        (self.root / "Cargo.toml").write_text(
+            '[workspace.package]\nversion = "0.2.0"\n', encoding="utf-8"
+        )
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def write_crate(self, body: str) -> None:
+        (self.root / "crates" / "zkagent-wire" / "Cargo.toml").write_text(body, encoding="utf-8")
+
+    def test_a_crate_that_does_not_inherit_is_reported(self) -> None:
+        self.write_crate('[package]\nname = "zkagent-wire"\nversion = "0.1.0"\n')
+        bad = check.workspace_version_drift(self.root)
+        self.assertTrue(any("does not inherit" in b for b in bad), bad)
+
+    def test_a_stale_dependency_pin_is_reported(self) -> None:
+        self.write_crate(
+            '[package]\nname = "zkagent-wire"\nversion.workspace = true\n\n'
+            '[dependencies]\nzkagent-core = { path = "../zkagent-core", version = "0.1.0" }\n'
+        )
+        bad = check.workspace_version_drift(self.root)
+        self.assertTrue(any("pins zkagent-core at 0.1.0" in b for b in bad), bad)
+
+    def test_a_consistent_crate_passes(self) -> None:
+        self.write_crate(
+            '[package]\nname = "zkagent-wire"\nversion.workspace = true\n\n'
+            '[dependencies]\nzkagent-core = { path = "../zkagent-core", version = "0.2.0" }\n'
+        )
+        self.assertEqual(check.workspace_version_drift(self.root), [])
+
+
 class RealRepository(unittest.TestCase):
     def test_the_current_tree_holds_every_invariant(self) -> None:
         code, text = check.run()

@@ -123,6 +123,37 @@ def cycles(g: dict[str, list[str]]) -> list[str]:
     return found
 
 
+def workspace_version_drift(root: pathlib.Path | None = None) -> list[str]:
+    """One version, one copy.
+
+    `[workspace.package] version` means nothing if the crates hardcode their own, or if
+    their `zkagent-*` path dependencies still pin the previous number. Bumping the
+    workspace then produces a binary that reports the old version: it happened twice in
+    one day, and the second symptom was a build error three crates away from the cause.
+    """
+    root = root or ROOT
+    text = (root / "Cargo.toml").read_text(encoding="utf-8")
+    m = re.search(
+        r"^\[workspace\.package\][^\[]*?^version\s*=\s*\"([^\"]+)\"", text, re.S | re.M
+    )
+    if not m:
+        return ["[workspace.package] version not found in Cargo.toml"]
+    want = m.group(1)
+
+    bad: list[str] = []
+    for crate_toml in sorted((root / "crates").glob("*/Cargo.toml")):
+        name = crate_toml.parent.name
+        body = crate_toml.read_text(encoding="utf-8")
+        if not re.search(r"^version\.workspace\s*=\s*true", body, re.M):
+            bad.append(f"{name} does not inherit version.workspace (workspace is {want})")
+        for dep, ver in re.findall(
+            r"^(zkagent-[a-z0-9-]+)\s*=\s*\{[^}]*version\s*=\s*\"([^\"]+)\"", body, re.M
+        ):
+            if ver != want:
+                bad.append(f"{name} pins {dep} at {ver}, workspace is {want}")
+    return bad
+
+
 def run() -> tuple[int, str]:
     g = graph()
     failures: list[str] = []
@@ -132,6 +163,8 @@ def run() -> tuple[int, str]:
         failures.extend(check_rule(who, rule, g))
     for who, rule in TARGETS:
         notes.extend(f"target not met: {v}" for v in check_rule(who, rule, g))
+
+    failures.extend(workspace_version_drift())
 
     failures.extend(f"dependency cycle: {c}" for c in cycles(g))
 
