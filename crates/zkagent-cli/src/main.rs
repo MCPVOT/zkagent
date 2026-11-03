@@ -139,6 +139,34 @@ enum Command {
         /// verify a proof statelessly (one-shot checks, tests).
         #[arg(long)]
         seen: Option<PathBuf>,
+        /// Optional disclosure artifact to check against this receipt.
+        ///
+        /// The proof already establishes that some set of actions satisfies the
+        /// policy. A disclosure adds a narrower claim: this particular digest is
+        /// in that set. If the disclosure fails, the command exits 1 even when
+        /// the proof itself is valid — a bundle can be honest and the extra
+        /// claim false, and the verdict must not cover for the extra claim.
+        #[arg(long)]
+        disclosure: Option<PathBuf>,
+    },
+    /// Reveal one action's digest, plus the path proving it is in the attested set.
+    ///
+    /// The proof never reveals which actions ran. This publishes exactly one of
+    /// them: the digest at `--index` and the three sibling hashes on its way to
+    /// the root. The other seven stay hidden.
+    Disclose {
+        /// Private actions (only the disclosed digest is written out).
+        #[arg(long)]
+        actions: PathBuf,
+        /// Which action slot to reveal (0-based, up to the number of actions).
+        #[arg(long)]
+        index: usize,
+        /// Receipt whose trace_root the disclosure proves against.
+        #[arg(long)]
+        receipt: PathBuf,
+        /// Where to write the disclosure artifact.
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Publish a bundle to a content-addressed block store.
     ///
@@ -390,6 +418,7 @@ fn run() -> Result<ExitCode, String> {
             proof,
             now,
             seen,
+            disclosure,
         } => {
             // Not an error: expiry is enforced inside the circuit, so this only
             // drops the future-dating check. But a verifier that forgets the flag
@@ -410,11 +439,49 @@ fn run() -> Result<ExitCode, String> {
                 zkagent_service::verify(&keys, &policy, &receipt, &proof, now, seen.as_deref())
                     .map_err(|e| e.to_string())?;
 
+            // The disclosure is a second, narrower claim. It is checked only when the proof
+            // itself was accepted, and it can still fail: a bundle can be honest about its
+            // totals and the extra claim about one action can be false. Refusing here, with a
+            // separate line, keeps the two verdicts from being confused for each other.
+            if let Some(path) = disclosure {
+                let claim: zkagent_service::Disclosure =
+                    zkagent_service::read_json(&path).map_err(|e| e.to_string())?;
+                match zkagent_service::check_disclosure(&claim, &receipt) {
+                    Ok(()) => eprintln!(
+                        "disclosure ACCEPT: slot {} with digest {} is in the attested set",
+                        claim.index, claim.leaf_digest
+                    ),
+                    Err(why) => {
+                        eprintln!("disclosure REJECT: {why}");
+                        return Ok(ExitCode::from(1));
+                    }
+                }
+            }
+
             Ok(emit_verdict(
                 json_out,
                 &outcome.verdict,
                 Some(receipt.execution_id),
             ))
+        }
+
+        Command::Disclose {
+            actions,
+            index,
+            receipt,
+            out,
+        } => {
+            let receipt = zkagent_service::read_receipt(&receipt).map_err(|e| e.to_string())?;
+            let actions = zkagent_service::read_actions(&actions).map_err(|e| e.to_string())?;
+            let disclosure = zkagent_service::disclose(&actions, index, &receipt)?;
+            zkagent_service::write_json(&out, &disclosure).map_err(|e| e.to_string())?;
+            println!(
+                "disclosed: slot {} digest {} -> {}",
+                disclosure.index,
+                disclosure.leaf_digest,
+                out.display()
+            );
+            Ok(ExitCode::SUCCESS)
         }
     }
 }

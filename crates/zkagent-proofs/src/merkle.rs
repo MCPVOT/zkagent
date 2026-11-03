@@ -149,6 +149,83 @@ pub fn root_bytes(root: CircuitField) -> [u8; ROOT_BYTES] {
     out
 }
 
+/// A field element from its canonical 32-byte little-endian encoding.
+///
+/// Used by the disclosure artifact, which carries hashes as hex. Anything wider
+/// than the modulus is reduced, which is why the artifact is checked against the
+/// receipt's root as bytes *before* any arithmetic happens.
+#[must_use]
+pub fn field_from_bytes(bytes: &[u8; ROOT_BYTES]) -> CircuitField {
+    CircuitField::from_le_bytes_mod_order(bytes)
+}
+
+/// One step of an inclusion proof: the sibling at that level and which side the
+/// node being proven was on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Step {
+    /// The other child of this level's parent.
+    pub sibling: CircuitField,
+    /// True when the proven node is the parent's left child.
+    pub node_is_left: bool,
+}
+
+/// Builds the inclusion path for `index` over exactly [`MAX_ACTIONS`] leaves.
+///
+/// This is the selective-disclosure primitive: the path plus one leaf is enough
+/// to convince anyone that the leaf is in the set committed by the public root,
+/// without revealing the other seven. The siblings are hashes, so they leak the
+/// shape of the set (that there are eight slots) and nothing about its contents.
+///
+/// # Panics
+/// When `index` is not a valid leaf slot. That is a caller bug, not a statement
+/// about an execution, and silently clamping it would disclose the wrong leaf.
+#[must_use]
+pub fn inclusion_path(leaves: &[CircuitField], index: usize) -> Vec<Step> {
+    assert!(index < MAX_ACTIONS, "leaf index out of range");
+
+    let mut level: Vec<CircuitField> = leaves.iter().take(MAX_ACTIONS).copied().collect();
+    level.resize(MAX_ACTIONS, CircuitField::from(0u64));
+
+    let mut idx = index;
+    let mut path = Vec::with_capacity(TREE_DEPTH);
+    while level.len() > 1 {
+        let node_is_left = idx.is_multiple_of(2);
+        let sibling = if node_is_left {
+            level[idx + 1]
+        } else {
+            level[idx - 1]
+        };
+        path.push(Step {
+            sibling,
+            node_is_left,
+        });
+        let (pairs, _rest) = level.as_chunks::<2>();
+        level = pairs.iter().map(|[a, b]| hash_pair(*a, *b)).collect();
+        idx /= 2;
+    }
+    path
+}
+
+/// Checks that `leaf` sits under `root` along `path`.
+///
+/// The check is deliberately total: a path of the wrong length returns `false`
+/// rather than panicking, because the path arrives from an untrusted artifact.
+#[must_use]
+pub fn verify_inclusion(leaf: CircuitField, path: &[Step], root: CircuitField) -> bool {
+    if path.len() != TREE_DEPTH {
+        return false;
+    }
+    let mut node = leaf;
+    for step in path {
+        node = if step.node_is_left {
+            hash_pair(node, step.sibling)
+        } else {
+            hash_pair(step.sibling, node)
+        };
+    }
+    node == root
+}
+
 /// The root over the padded trace digests of `actions`.
 ///
 /// This is the function the prover uses to fill in `Receipt::trace_root`, so no
@@ -317,5 +394,70 @@ mod tests {
             3 * ROUNDS * 2,
             "one compression should be two 110-round permutations at 3 constraints per round"
         );
+    }
+
+    // --- selective disclosure: prove one leaf is in the set ----------------------
+
+    #[test]
+    fn every_leaf_has_a_path_that_verifies() {
+        let digests = sample_digests();
+        let leaves = leaves_from_digests(&digests);
+        let root = root_native(&leaves);
+        for index in 0..MAX_ACTIONS {
+            let path = inclusion_path(&leaves, index);
+            assert_eq!(path.len(), TREE_DEPTH);
+            assert!(
+                verify_inclusion(leaves[index], &path, root),
+                "leaf {index} should verify against the root"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tampered_sibling_is_refused() {
+        let digests = sample_digests();
+        let leaves = leaves_from_digests(&digests);
+        let root = root_native(&leaves);
+        let mut path = inclusion_path(&leaves, 3);
+        path[1].sibling += CircuitField::from(1u64);
+        assert!(!verify_inclusion(leaves[3], &path, root));
+    }
+
+    #[test]
+    fn a_different_leaf_at_the_same_index_is_refused() {
+        let digests = sample_digests();
+        let leaves = leaves_from_digests(&digests);
+        let root = root_native(&leaves);
+        let path = inclusion_path(&leaves, 0);
+        assert!(!verify_inclusion(CircuitField::from(999u64), &path, root));
+    }
+
+    #[test]
+    fn a_flipped_side_is_refused() {
+        let digests = sample_digests();
+        let leaves = leaves_from_digests(&digests);
+        let root = root_native(&leaves);
+        let mut path = inclusion_path(&leaves, 2);
+        path[0].node_is_left = !path[0].node_is_left;
+        assert!(!verify_inclusion(leaves[2], &path, root));
+    }
+
+    #[test]
+    fn an_unused_slot_discloses_the_padding() {
+        // Two actions ran; the other six slots are padded with a zero digest. A path for a
+        // padded slot must still prove the padding, which is what makes "this set had at most
+        // eight actions, and slot 5 is empty" a checkable statement.
+        let leaves = leaves_from_digests(&[11, 22]);
+        let root = root_native(&leaves);
+        let path = inclusion_path(&leaves, 5);
+        assert!(verify_inclusion(CircuitField::from(0u64), &path, root));
+    }
+
+    #[test]
+    fn a_short_path_is_refused_rather_than_panicking() {
+        let leaves = leaves_from_digests(&sample_digests());
+        let root = root_native(&leaves);
+        let path = inclusion_path(&leaves, 0);
+        assert!(!verify_inclusion(leaves[0], &path[..2], root));
     }
 }

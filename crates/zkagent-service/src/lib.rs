@@ -41,11 +41,13 @@
 #![deny(unsafe_code)]
 
 pub mod bundle;
+pub mod disclosure;
 pub mod error;
 pub mod ops;
 pub mod wire;
 
 pub use bundle::{publish, verify_bundle, PublishedBundle};
+pub use disclosure::{check_disclosure, disclose, Disclosure, PathStep};
 pub use error::ServiceError;
 pub use ops::{
     authorize, prove, read_actions, read_json, read_receipt, read_signed_policy, resolve_authority,
