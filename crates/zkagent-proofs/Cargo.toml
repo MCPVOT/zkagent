@@ -1,10 +1,10 @@
 [package]
 name = "zkagent-proofs"
 description = "Groth16 circuit and prover for zero-knowledge agent execution attestation"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.89"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 repository = "https://github.com/MCPVOT/zkagent"
 
 [dependencies]

@@ -24,6 +24,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +33,37 @@ from pathlib import Path
 LEDGER = Path(os.environ.get("ZKAGENT_LEDGER", Path(__file__).resolve().parent.parent / "docs" / "loop-ledger.jsonl"))
 
 PHASES = ["research", "design", "circuit", "prover", "verifier", "docs", "publish"]
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+def git_commit() -> str:
+    """The commit this row was measured on.
+
+    A metric without a commit is not reproducible: "prove 0.061s" is worth nothing if the
+    reader cannot check out the tree that produced it. Returns "" when git is unavailable,
+    and `status` counts those rows, so the gap stays visible instead of being assumed.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def format_version() -> str:
+    """The artifact format constant, read from the source that defines it."""
+    try:
+        text = (REPO / "crates" / "zkagent-wire" / "src" / "lib.rs").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    m = re.search(r"FORMAT_VERSION:\s*u32\s*=\s*(\d+)", text)
+    return m.group(1) if m else ""
 
 
 def now() -> str:
@@ -149,6 +182,8 @@ def cmd_record(args: argparse.Namespace) -> int:
         "result": args.result,
         "metric": args.metric or "",
         "note": args.note or "",
+        "commit": args.commit if getattr(args, "commit", None) else git_commit(),
+        "format": format_version(),
     }
     append_row(row)
     print(f"recorded: {row['phase']} / {row['result']} / {row['action']}")
@@ -160,6 +195,12 @@ def cmd_status(_: argparse.Namespace) -> int:
     agg = aggregate(rows)
     print(f"ledger: {LEDGER}")
     print(f"rows:   {agg['total']}")
+    legacy = sum(1 for r in rows if not r.get("commit"))
+    if legacy:
+        print(
+            f"        {legacy} row(s) predate commit capture -- unverifiable, "
+            "do not cite them as reproduced"
+        )
     for phase in PHASES:
         c = agg["per_phase"].get(phase)
         if c:
@@ -187,6 +228,11 @@ def main(argv: list[str]) -> int:
     r.add_argument("--result", required=True)
     r.add_argument("--metric", default="")
     r.add_argument("--note", default="")
+    r.add_argument(
+        "--commit",
+        default=None,
+        help="commit the measurement was taken on (default: HEAD)",
+    )
     r.set_defaults(func=cmd_record)
 
     s = sub.add_parser("status", help="summarise the ledger")

@@ -1,10 +1,10 @@
 [package]
 name = "zkagent-core"
 description = "Protocol data types for zero-knowledge attestation of AI agent executions"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.89"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 repository = "https://github.com/MCPVOT/zkagent"
 homepage = "https://github.com/MCPVOT/zkagent"
 
