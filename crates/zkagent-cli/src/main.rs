@@ -207,13 +207,16 @@ fn run() -> Result<ExitCode, String> {
             let dirty = option_env!("ZKAGENT_GIT_DIRTY").unwrap_or("0") == "1";
             let format = zkagent_service::FORMAT_VERSION;
             if json_out {
-                println!(
-                    "{{\"name\":\"zkagent\",\"version\":\"{}\",\"format\":{},\"commit\":\"{}\",\"dirty\":{}}}",
-                    env!("CARGO_PKG_VERSION"),
-                    format,
-                    commit,
-                    dirty
-                );
+                // Built, not formatted by hand: a hand-rolled JSON string is one unescaped
+                // character away from a document a harness cannot parse.
+                let doc = serde_json::json!({
+                    "name": "zkagent",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "format": format,
+                    "commit": commit,
+                    "dirty": dirty,
+                });
+                println!("{doc}");
             } else {
                 println!(
                     "zkagent {} (artifact format {}) commit {}{}",
