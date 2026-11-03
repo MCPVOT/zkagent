@@ -35,7 +35,7 @@ class LedgerRowTest(unittest.TestCase):
         loop.LEDGER = self._saved
         self.tmp.cleanup()
 
-    def record(self, commit: str | None = None) -> dict:
+    def record(self, commit: str | None = None, hint: str = "") -> dict:
         args = argparse.Namespace(
             phase="verifier",
             action="a test row",
@@ -43,6 +43,7 @@ class LedgerRowTest(unittest.TestCase):
             metric="x=1",
             note="",
             commit=commit,
+            next_hint=hint,
         )
         loop.cmd_record(args)
         return json.loads(self.ledger.read_text(encoding="utf-8").splitlines()[-1])
@@ -78,6 +79,49 @@ class LedgerRowTest(unittest.TestCase):
         with contextlib.redirect_stdout(buf):
             loop.cmd_status(argparse.Namespace())
         self.assertNotIn("predate", buf.getvalue())
+
+
+class HandOffTest(unittest.TestCase):
+    """A unit that leaves work behind must say so, or the loop only sees counters."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ledger = Path(self.tmp.name) / "ledger.jsonl"
+        self._saved = loop.LEDGER
+        loop.LEDGER = self.ledger
+
+    def tearDown(self) -> None:
+        loop.LEDGER = self._saved
+        self.tmp.cleanup()
+
+    def add(self, action: str, hint: str) -> None:
+        loop.cmd_record(
+            argparse.Namespace(
+                phase="docs",
+                action=action,
+                result="pass",
+                metric="",
+                note="",
+                commit="cafe123",
+                next_hint=hint,
+            )
+        )
+
+    def test_a_hint_is_printed_first_and_newest_first(self) -> None:
+        self.add("first unit", "do the second thing")
+        self.add("second unit", "do the third thing")
+        out = loop.recommend(loop.read_rows())
+        self.assertTrue(out[0].startswith("handed off: do the third thing"), out)
+        self.assertTrue(out[1].startswith("handed off: do the second thing"), out)
+
+    def test_hints_are_capped_and_deduplicated(self) -> None:
+        self.add("a", "same hint")
+        self.add("b", "same hint")
+        for i in range(5):
+            self.add(f"unit {i}", f"hint {i}")
+        out = [line for line in loop.recommend(loop.read_rows()) if line.startswith("handed off:")]
+        self.assertEqual(len(out), 3, out)
+        self.assertEqual(len(out), len(set(out)), out)
 
 
 if __name__ == "__main__":

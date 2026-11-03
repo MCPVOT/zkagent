@@ -28,13 +28,19 @@ Read, in this order:
    reproduces it. For a feature, a test of the property being added. For a
    soundness fix, a proof or verification that is wrongly **accepted** today.
 5. **GREEN second** — the smallest change that makes RED pass.
-6. **Run the gate locally**:
+6. **Run the gate locally** — the same commands CI runs:
    ```bash
    cargo fmt --all --check
-   cargo clippy --all-targets -- -D warnings
-   cargo test
-   python tools/leaderboard/test_generate.py
+   cargo clippy --workspace --all-targets -- -D warnings
+   cargo test --workspace
+   RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
+   python3 tools/arch/test_check.py && python3 tools/arch/check.py
+   python3 tools/test_loop.py
+   python3 tools/leaderboard/test_generate.py
    ```
+   A shortcut worth having: `cargo test` with a feature flag that is not
+   enabled runs zero tests and still prints `ok`. Read the counts, not the
+   green words.
 7. **Open the PR** using the template, quoting the RED output and the GREEN result.
    `Fixes #N` only when it completes the issue; otherwise `Refs #N`.
 8. **Stop at the PR.** Do not merge your own work, do not push to `master`, do not
@@ -65,6 +71,38 @@ layer is not done until:
 - every existing negative test still passes, **and** a new one covers your case;
 - `cargo test` is green from a clean checkout;
 - the PR body names the soundness property that changed and the test that proves it.
+
+## Versioning and releases
+
+Three numbers, three jobs: the **crate version** says which code you are running, **`FORMAT_VERSION`**
+says which artifacts that binary can read, and the **git tag** says which day and which tree.
+
+- **Bump in one place.** `[workspace.package] version` in the root `Cargo.toml`; the crates inherit it
+  (`version.workspace = true`) and their `zkagent-*` path dependencies pin the same string.
+  `tools/arch/check.py` fails on either half, so a bump cannot half-land.
+- **A format change is a minor bump.** Circuit, public inputs or artifact encoding changed →
+  `FORMAT_VERSION` and the crate version move together, and the verifier refuses old artifacts loudly
+  instead of guessing.
+- **Cut the release in the PR that changes the behaviour**: bump the version, write the
+  `docs/RELEASES.md` entry with measured numbers, merge, then tag the merged commit.
+  ```bash
+  git tag -a "v0.2.0+2026-11-02" -m "one line: what is true now"
+  git push origin "v0.2.0+2026-11-02"
+  ```
+- **Numbers come from a measurement on a named machine**, never from the previous release note.
+  `docs/MEASUREMENTS.md` is where the method lives.
+- **After installing a binary anywhere**, `zkagent version` must print the commit the tag names.
+  If it prints a different one, you are verifying with a build of some other branch.
+
+## Git shape
+
+- `master` is the only long-lived branch; work happens on `feat/`, `fix/`, `docs/`, `chore/`, `test/`.
+- **Squash only.** Merge commits and rebase merges are disabled at the repository level, so history is
+  one commit per unit and the branch name never outlives the work.
+- **Branches delete on merge.** A branch still sitting there is leftover, not history.
+- The one exception is `leaderboard`, an orphan data branch the weekly workflow pushes to. It is not
+  source and must never be merged.
+- Commit subjects name the unit, not the person: `proofs: bind trace_digest to a public MiMC Merkle root`.
 
 ## Review
 

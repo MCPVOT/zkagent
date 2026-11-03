@@ -114,6 +114,9 @@ to a public network. See `docs/ARCHITECTURE.md` §"Trusted setup".
 | `examples/crossverify` | the exporter that puts our artifacts in the standard Groth16/BN254 shape |
 | `docs/INFRASTRUCTURE.md` | which nodes exist and what each may be trusted with |
 | `docs/research/` | the cited research corpus this was built from |
+| `docs/MEASUREMENTS.md` | how every number quoted here was measured, and on what |
+| `docs/RELEASES.md` | versions, tags, and what changed in each |
+| `CONTRIBUTING.md` | the loop: RED, GREEN, the gate, versioning, git shape |
 | `tools/loop.py` | the loop-learning ledger and its consumer |
 | `docs/loop-ledger.jsonl` | append-only record of what was tried and what happened |
 
@@ -196,9 +199,9 @@ is how a format mismatch becomes a mystery:
 
 ```bash
 zkagent version
-# zkagent 0.1.1 (artifact format 2) commit 6f4be0f
+# zkagent 0.2.0 (artifact format 3) commit 0a945f1
 zkagent --json version
-# {"name":"zkagent","version":"0.1.1","format":2,"commit":"6f4be0f","dirty":false}
+# {"name":"zkagent","version":"0.2.0","format":3,"commit":"0a945f1","dirty":false}
 ```
 
 | field | what it answers |
