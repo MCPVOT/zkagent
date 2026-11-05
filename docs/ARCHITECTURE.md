@@ -423,20 +423,34 @@ Measured on this implementation, not estimated:
 |---|---|---|
 | constraints | **7442** | `constraint_count_is_sane` test (`--nocapture`) |
 | public inputs | **16** | asserted by the same test (`num_instance_variables == 17`, incl. the constant-one slot) |
-| proof | **128 B** (2 170 B JSON artifact) | `proof.json` |
-| verifying key | **712 B** | `keys/vk.bin` |
-| proving key | **649 KB** | `keys/pk.bin` |
+| proof | **128 B** (2 326 B JSON artifact) | `proof.json` |
+| verifying key | **776 B** | `keys/vk.bin` |
+| proving key | **1 449 328 B** | `keys/pk.bin` |
 | binary | 2.1 MB | release build |
 | end-to-end | **ACCEPT** | real CLI run: setup → policy → prove → verify |
 | setup (release, parallel) | 0.19 s | wall clock |
-| prove (release, parallel) | **0.66–0.70 s** | 3 runs, after the MiMC trace root added ~4.6k constraints |
-| prove (release, serial) | 1.02–1.16 s | 3 runs, `parallel` feature off |
-| verify (release) | **0.048–0.091 s** | 5 runs, incl. ~40 ms process startup |
+| prove (release, parallel) | **0.42–0.45 s** | 6 runs, 2 actions / 7 442 constraints, after the proving key is decompressed in parallel (§7.1) |
+| prove (release, serial rayon) | 2.34 s | `RAYON_NUM_THREADS=1`, same fixture |
+| verify (release) | **0.009–0.012 s** | 6 runs, incl. ~5 ms process startup |
 
 Rayon (`ark-groth16/parallel`) is worth ~2× on proving and nothing on
 verification, so it is enabled — with the note that a memory-constrained box can
-build serial instead. Raw runs and the stale-binary trap that produced a 28 936 B
-vk once: `docs/MEASUREMENTS.md`.
+build serial instead. More threads than physical cores still help, so the
+default (one per logical CPU) is the right setting on this laptop. Raw runs, the
+phase breakdown, and the stale-binary trap that produced a 28 936 B vk once:
+`docs/MEASUREMENTS.md`.
+
+### 7.1 Where proving time actually goes
+
+Measured before any optimisation, `prove` was 920 ms: **734 ms reading
+`pk.bin`**, 26 ms synthesising the circuit to check it, 149 ms of Groth16
+arithmetic. Decompressing 45 291 compressed points means 45 291 field square
+roots, and arkworks' `Vec<Affine>` reader does them one at a time (it already
+parallelises the subgroup checks). Reading the same bytes with the square roots
+spread over the rayon pool, and synthesising the circuit once instead of twice,
+takes the command to ~437 ms with the constraint system, the public inputs and
+the proof bytes unchanged. Same measurement, same machine:
+`docs/MEASUREMENTS.md`.
 
 An independent implementation probe of the same statement shape
 (`05-rust-implementation-design.md`) measured a smaller circuit (2162
