@@ -15,7 +15,7 @@ name = "zkagent"
 path = "src/main.rs"
 
 [dependencies]
-zkagent-service = { path = "../zkagent-service", version = "0.2.0" }
+zkagent-service = { path = "../zkagent-service", version = "0.3.1" }
 clap = { version = "4", features = ["derive"] }
 hex = "0.4"
 serde_json = "1"
