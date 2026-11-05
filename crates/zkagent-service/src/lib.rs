@@ -50,9 +50,9 @@ pub use bundle::{publish, verify_bundle, PublishedBundle};
 pub use disclosure::{check_disclosure, disclose, Disclosure, PathStep};
 pub use error::ServiceError;
 pub use ops::{
-    authorize, prove, read_actions, read_json, read_receipt, read_signed_policy, resolve_authority,
-    setup, verify, write_json, AuthorityKey, PolicySpec, ResolvedAuthority, SetupOutcome,
-    VerifyOutcome,
+    authorize, load_keys, prove, prove_with_keys, read_actions, read_json, read_receipt,
+    read_signed_policy, resolve_authority, setup, verify, write_json, AuthorityKey, PolicySpec,
+    ResolvedAuthority, SetupOutcome, VerifyOutcome,
 };
 // Re-exported so a host needs ONE dependency, not three, to read a verdict.
 pub use zkagent_verifier::{RejectReason, Verdict};
@@ -62,7 +62,10 @@ pub use zkagent_verifier::{RejectReason, Verdict};
 // see `docs/CODE-MAP.md`.
 pub use wire::{ActionJson, AuthorizedPolicy, PolicyJson, ReceiptJson, SignedPolicyFile};
 pub use zkagent_ipfs::{AttestationManifest, BlockSource, DirSource, MemorySource};
-pub use zkagent_proofs::prover::ProvenExecution;
+// `Keys` is re-exported for the same reason: a host that caches a parsed key
+// names the type it is caching, and should not have to depend on the prover
+// crate to do it.
+pub use zkagent_proofs::prover::{Keys, ProvenExecution};
 pub use zkagent_wire::{ProofBytes, FORMAT_VERSION};
 
 /// The crate version, surfaced for hosts that want to report it.

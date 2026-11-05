@@ -39,13 +39,28 @@
 //!
 //! Every tool is path-based: the harness decides where the workspace lives,
 //! and the service never assumes a working directory.
+//!
+//! # One key load per keys directory, not per call
+//!
+//! This is the one piece of state the server keeps: the parsed proving key. An
+//! MCP server is a long-lived process driven by many `tools/call`s, and parsing
+//! `pk.bin` costs ~258 ms of the ~400 ms a prove call takes end to end (see
+//! [`keycache`]). A CLI pays it once and exits; a server would pay it on every
+//! call. The cache is keyed by the canonical keys directory plus a fingerprint of
+//! both key files, so a regenerated key is noticed and reloaded rather than
+//! served stale. Tool arguments, tool results and the key validation are
+//! unchanged.
 
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
+mod keycache;
+
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
+use keycache::KeyCache;
 use zkagent_service::{AuthorityKey, PolicySpec};
 
 /// The MCP protocol version this server implements.
@@ -61,7 +76,13 @@ pub const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[PROTOCOL_VERSION];
 /// The server name reported in `initialize`.
 pub const SERVER_NAME: &str = "zkagent";
 
-/// Handle one JSON-RPC request.
+/// Handle one JSON-RPC request with the process-wide server.
+///
+/// This is the convenience entry point: it keeps a server — and therefore its
+/// proving-key cache — alive for the life of the process, so repeated
+/// `tools/call`s reuse the parsed key. A host that wants to own that lifetime
+/// explicitly (to drop the key, or to serve two independent workspaces with two
+/// separate caches) should build a [`Server`] and call [`Server::handle`].
 ///
 /// Returns `None` for notifications (requests without an `id`), which by the
 /// JSON-RPC spec must not be answered.
@@ -70,35 +91,147 @@ pub const SERVER_NAME: &str = "zkagent";
 /// Never. Every malformed request becomes a JSON-RPC error object.
 #[must_use]
 pub fn handle(request: &Value) -> Option<Value> {
-    let id = request.get("id").cloned();
-    let method = request.get("method").and_then(Value::as_str).unwrap_or("");
+    default_server().handle(request)
+}
 
-    // A notification has no id and must not be answered.
-    let id = id?;
+/// The server behind [`handle`], created on first use.
+fn default_server() -> &'static Server {
+    static DEFAULT: OnceLock<Server> = OnceLock::new();
+    DEFAULT.get_or_init(Server::new)
+}
 
-    let result = match method {
-        "initialize" => Ok(initialize_result(request)),
-        "ping" => Ok(json!({})),
-        "tools/list" => Ok(json!({ "tools": tool_schemas() })),
-        "resources/list" => Ok(json!({ "resources": [] })),
-        "tools/call" => {
-            let params = request.get("params").cloned().unwrap_or(json!({}));
-            call_tool(&params)
+/// One MCP server: the protocol dispatch, plus the parsed key it is holding.
+///
+/// The only state is the key cache, and it is per-server on purpose — a host
+/// that constructs two servers gets two independent caches instead of two
+/// callers silently sharing one.
+pub struct Server {
+    keys: KeyCache,
+}
+
+impl Server {
+    /// A server with an empty key cache. The first `zkagent_prove` loads the
+    /// key; later ones reuse it until the key files change.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            keys: KeyCache::new(),
         }
-        other => Err(RpcError {
-            code: -32601,
-            message: format!("method not found: {other}"),
-        }),
-    };
+    }
 
-    Some(match result {
-        Ok(value) => json!({ "jsonrpc": "2.0", "id": id, "result": value }),
-        Err(err) => json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": { "code": err.code, "message": err.message }
-        }),
-    })
+    /// Handle one JSON-RPC request.
+    ///
+    /// Returns `None` for notifications (requests without an `id`), which by the
+    /// JSON-RPC spec must not be answered.
+    ///
+    /// # Panics
+    /// Never. Every malformed request becomes a JSON-RPC error object.
+    #[must_use]
+    pub fn handle(&self, request: &Value) -> Option<Value> {
+        let id = request.get("id").cloned();
+        let method = request.get("method").and_then(Value::as_str).unwrap_or("");
+
+        // A notification has no id and must not be answered.
+        let id = id?;
+
+        let result = match method {
+            "initialize" => Ok(initialize_result(request)),
+            "ping" => Ok(json!({})),
+            "tools/list" => Ok(json!({ "tools": tool_schemas() })),
+            "resources/list" => Ok(json!({ "resources": [] })),
+            "tools/call" => {
+                let params = request.get("params").cloned().unwrap_or(json!({}));
+                self.call_tool(&params)
+            }
+            other => Err(RpcError {
+                code: -32601,
+                message: format!("method not found: {other}"),
+            }),
+        };
+
+        Some(match result {
+            Ok(value) => json!({ "jsonrpc": "2.0", "id": id, "result": value }),
+            Err(err) => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": err.code, "message": err.message }
+            }),
+        })
+    }
+
+    /// Dispatch `tools/call`.
+    fn call_tool(&self, params: &Value) -> Result<Value, RpcError> {
+        let name = params
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| RpcError::invalid_params("missing tool name"))?;
+        let args = params.get("arguments").cloned().unwrap_or(json!({}));
+
+        match name {
+            "zkagent_setup" => tool_setup(&args),
+            "zkagent_authorize" => tool_authorize(&args),
+            "zkagent_prove" => self.tool_prove(&args),
+            "zkagent_verify" => tool_verify(&args),
+            "zkagent_status" => tool_status(&args),
+            other => Err(RpcError {
+                code: -32602,
+                message: format!("unknown tool: {other}"),
+            }),
+        }
+    }
+
+    fn tool_prove(&self, args: &Value) -> Result<Value, RpcError> {
+        let keys_dir = PathBuf::from(req_str(args, "keys_dir")?);
+        let policy_path = PathBuf::from(req_str(args, "policy_path")?);
+        let receipt_path = PathBuf::from(req_str(args, "receipt_path")?);
+        let actions_path = PathBuf::from(req_str(args, "actions_path")?);
+
+        let receipt = zkagent_service::read_receipt(&receipt_path).map_err(service_error)?;
+        let actions = zkagent_service::read_actions(&actions_path).map_err(service_error)?;
+
+        // The one expensive thing this server keeps between calls: the parsed
+        // key pair. A miss (first call, or the files changed) costs the same
+        // ~258 ms decompress a one-shot CLI pays.
+        let keys = self.keys.get(&keys_dir).map_err(service_error)?;
+        let proven = zkagent_service::prove_with_keys(&keys, &policy_path, &receipt, &actions)
+            .map_err(service_error)?;
+
+        let proof_path = opt_str(args, "proof_path").map(PathBuf::from);
+        if let Some(path) = &proof_path {
+            zkagent_service::write_json(path, &proven.proof).map_err(service_error)?;
+        }
+
+        // The receipt is completed by the prover (the trace root is derived from
+        // the private witness), so write it back. A caller that keeps the old
+        // file would verify against a root the proof does not commit to.
+        zkagent_service::write_json(
+            &receipt_path,
+            &zkagent_service::ReceiptJson::from(&proven.receipt),
+        )
+        .map_err(service_error)?;
+
+        Ok(ok(json!({
+            "proof_path": proof_path.map(|p| p.display().to_string()),
+            "format_version": proven.proof.format_version,
+            "public_inputs": proven.proof.public_inputs,
+            "proof_bytes": proven.proof.proof.len(),
+            "trace_root": hex_encode(&proven.receipt.trace_root)
+        })))
+    }
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Map a service failure onto a JSON-RPC tool error.
+fn service_error(e: zkagent_service::ServiceError) -> RpcError {
+    RpcError {
+        code: -32000,
+        message: e.to_string(),
+    }
 }
 
 /// A JSON-RPC level error.
@@ -234,27 +367,6 @@ fn tool_schemas() -> Vec<Value> {
     ]
 }
 
-/// Dispatch `tools/call`.
-fn call_tool(params: &Value) -> Result<Value, RpcError> {
-    let name = params
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| RpcError::invalid_params("missing tool name"))?;
-    let args = params.get("arguments").cloned().unwrap_or(json!({}));
-
-    match name {
-        "zkagent_setup" => tool_setup(&args),
-        "zkagent_authorize" => tool_authorize(&args),
-        "zkagent_prove" => tool_prove(&args),
-        "zkagent_verify" => tool_verify(&args),
-        "zkagent_status" => tool_status(&args),
-        other => Err(RpcError {
-            code: -32602,
-            message: format!("unknown tool: {other}"),
-        }),
-    }
-}
-
 fn tool_setup(args: &Value) -> Result<Value, RpcError> {
     let keys_dir = PathBuf::from(req_str(args, "keys_dir")?);
     let seed = opt_u64(args, "seed").unwrap_or(7);
@@ -300,58 +412,6 @@ fn tool_authorize(args: &Value) -> Result<Value, RpcError> {
         "used_demo_key": authorized.used_demo_key,
         "created_key_file": authorized.created_key_file,
         "warning": authorized.warning
-    })))
-}
-
-fn tool_prove(args: &Value) -> Result<Value, RpcError> {
-    let keys_dir = PathBuf::from(req_str(args, "keys_dir")?);
-    let policy_path = PathBuf::from(req_str(args, "policy_path")?);
-    let receipt_path = PathBuf::from(req_str(args, "receipt_path")?);
-    let actions_path = PathBuf::from(req_str(args, "actions_path")?);
-
-    let receipt = zkagent_service::read_receipt(&receipt_path).map_err(|e| RpcError {
-        code: -32000,
-        message: e.to_string(),
-    })?;
-    let actions = zkagent_service::read_actions(&actions_path).map_err(|e| RpcError {
-        code: -32000,
-        message: e.to_string(),
-    })?;
-
-    let proven =
-        zkagent_service::prove(&keys_dir, &policy_path, &receipt, &actions).map_err(|e| {
-            RpcError {
-                code: -32000,
-                message: e.to_string(),
-            }
-        })?;
-
-    let proof_path = opt_str(args, "proof_path").map(PathBuf::from);
-    if let Some(path) = &proof_path {
-        zkagent_service::write_json(path, &proven.proof).map_err(|e| RpcError {
-            code: -32000,
-            message: e.to_string(),
-        })?;
-    }
-
-    // The receipt is completed by the prover (the trace root is derived from the
-    // private witness), so write it back. A caller that keeps the old file would
-    // verify against a root the proof does not commit to.
-    zkagent_service::write_json(
-        &receipt_path,
-        &zkagent_service::ReceiptJson::from(&proven.receipt),
-    )
-    .map_err(|e| RpcError {
-        code: -32000,
-        message: e.to_string(),
-    })?;
-
-    Ok(ok(json!({
-        "proof_path": proof_path.map(|p| p.display().to_string()),
-        "format_version": proven.proof.format_version,
-        "public_inputs": proven.proof.public_inputs,
-        "proof_bytes": proven.proof.proof.len(),
-        "trace_root": hex_encode(&proven.receipt.trace_root)
     })))
 }
 
@@ -495,6 +555,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn initialize_reports_the_protocol_and_tools() {
@@ -568,6 +629,102 @@ mod tests {
         assert!(response["error"]["message"]
             .as_str()
             .is_some_and(|m| m.contains("keys_dir")));
+    }
+
+    /// The whole point of the cache, through the tool surface a harness uses:
+    /// two `tools/call zkagent_prove` requests in one server must parse the key
+    /// once, produce the same artifact both times, and be verified by the same
+    /// verifier (a cached key that changed the proof would fail here).
+    #[test]
+    fn two_prove_calls_in_one_server_load_the_key_once() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let keys_dir = dir.path().join("keys");
+        let policy_path = dir.path().join("policy.json");
+        let receipt_path = dir.path().join("receipt.json");
+        let actions_path = dir.path().join("actions.json");
+        let proof_path = dir.path().join("proof.json");
+
+        fs::write(
+            &receipt_path,
+            concat!(
+                r#"{"total_amount":400,"action_count":2,"completed_at":1500,"chain_id":1,"#,
+                r#""execution_id":1001,"#,
+                r#""trace_root":"0000000000000000000000000000000000000000000000000000000000000000"}"#
+            ),
+        )
+        .expect("write receipt");
+        fs::write(
+            &actions_path,
+            r#"[{"target":3,"amount":250,"trace_digest":11},{"target":7,"amount":150,"trace_digest":22}]"#,
+        )
+        .expect("write actions");
+
+        let server = Server::new();
+        let tool = |name: &str, arguments: Value| -> Value {
+            server
+                .handle(&json!({
+                    "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": { "name": name, "arguments": arguments }
+                }))
+                .expect("every request with an id is answered")
+        };
+
+        let setup = tool(
+            "zkagent_setup",
+            json!({ "keys_dir": keys_dir.display().to_string(), "seed": 7 }),
+        );
+        assert_eq!(setup["result"]["isError"], json!(false), "{setup}");
+        let authorized = tool(
+            "zkagent_authorize",
+            json!({
+                "policy_path": policy_path.display().to_string(),
+                "max_amount": 1000, "max_per_action": 300, "expires_at": 2000,
+                "chain_id": 1, "targets": [3, 7, 9], "seed": 7
+            }),
+        );
+        assert_eq!(
+            authorized["result"]["isError"],
+            json!(false),
+            "{authorized}"
+        );
+
+        let probe_args = json!({
+            "keys_dir": keys_dir.display().to_string(),
+            "policy_path": policy_path.display().to_string(),
+            "receipt_path": receipt_path.display().to_string(),
+            "actions_path": actions_path.display().to_string(),
+            "proof_path": proof_path.display().to_string()
+        });
+
+        let first = tool("zkagent_prove", probe_args.clone());
+        let first_proof = fs::read(&proof_path).expect("read proof");
+        let second = tool("zkagent_prove", probe_args);
+        let second_proof = fs::read(&proof_path).expect("read proof");
+
+        assert_eq!(first["result"]["isError"], json!(false));
+        assert_eq!(second["result"]["isError"], json!(false));
+        // Same key, same witness, same proof: the cached key is the key.
+        assert_eq!(first_proof, second_proof);
+        assert_eq!(
+            first["result"]["structuredContent"]["public_inputs"],
+            second["result"]["structuredContent"]["public_inputs"]
+        );
+        assert_eq!(server.keys.loads(), 1, "the second call reloaded the key");
+
+        // And it verifies, so the cache did not smuggle in a different key.
+        let verdict = tool(
+            "zkagent_verify",
+            json!({
+                "keys_dir": keys_dir.display().to_string(),
+                "policy_path": policy_path.display().to_string(),
+                "receipt_path": receipt_path.display().to_string(),
+                "proof_path": proof_path.display().to_string()
+            }),
+        );
+        assert_eq!(
+            verdict["result"]["structuredContent"]["accepted"],
+            json!(true)
+        );
     }
 
     #[test]

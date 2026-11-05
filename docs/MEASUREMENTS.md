@@ -218,6 +218,63 @@ the `proof.json` for the fixture is byte-identical (sha256
   1.3 ms of 11 ms for two more custom parsers — not worth the surface. Left
   alone deliberately.
 
+## The MCP server pays the key load once, not per call
+
+A one-shot CLI pays the 258 ms decompress once and exits, which is why nothing
+was cached. `zkagent-mcp` is the opposite: one process, many `tools/call`s, so it
+paid the same 258 ms on **every** prove. Measured **2026-11-05** (same laptop,
+release, `CARGO_BUILD_JOBS=4`, 2 actions) by driving the real binary over stdio —
+one process, `initialize` → `zkagent_setup` → `zkagent_authorize` → repeated
+`tools/call zkagent_prove` — with the client timing each request from write to
+response.
+
+The two binaries (`master` and `perf/mcp-keycache`) were **alternated**, five
+rounds each with five prove calls per round, median per call index. The laptop's
+load average was ~20 during the run, so single samples are worthless here; the
+alternation is what makes the comparison fair.
+
+| prove call | `master` | `perf/mcp-keycache` |
+|---|---|---|
+| 1 (cold) | 413 ms | 432 ms |
+| 2 | 468 ms | 180 ms |
+| 3 | 409 ms | 154 ms |
+| 4 | 441 ms | 176 ms |
+| 5 | 398 ms | 159 ms |
+
+Warm calls: **438 → 158 ms** median, **280 ms per call saved** — the 258 ms
+decompress plus the 1.45 MB read. The first call is unchanged within noise, which
+is the point: the work did not move, it stopped being repeated.
+
+A regenerated key is not served from cache. After the warm calls the harness ran
+`zkagent_setup` again (seed 99) **in the same process** and proved again:
+
+| | master | perf/mcp-keycache |
+|---|---|---|
+| prove right after a regeneration | 407 ms (median) | 416 ms (median) |
+| vs. warm median | −31 ms | **+258 ms** |
+
+On `master` a regeneration costs nothing extra because every call reloads anyway.
+On the branch it costs exactly one reload — a full `pk.bin` parse — and the proof
+that follows verifies against the **new** `vk.bin` (the harness verifies both
+before and after regeneration; both `ACCEPT`). The deterministic version of the
+same evidence is in the unit tests: two prove calls through the tool surface leave
+`loads == 1`, a regeneration makes it 2, and a corrupt `pk.bin` is an error on
+every call rather than a silent fall back to the cached key.
+
+The cache is one slot, keyed by the canonical keys directory plus a fingerprint of
+**both** key files: length, mtime (ns), ctime (ns) and an FNV-1a hash of the first
+and last 4 KiB. Length alone cannot detect a rerun — `setup` rewrites `pk.bin` to
+exactly 1 449 328 bytes every time — and the content probe is what makes a
+same-length rewrite visible on a filesystem with coarse timestamps. One slot, not
+an LRU: a server serves one workspace, and the entry is bounded at the size of one
+parsed key (~3 MB of points) by construction. Retaining it does not show up in
+RSS — `VmRSS` is 26.1 MB after two proves with the cache and 27.7 MB without it,
+because the peak during a prove already holds the same structures.
+
+Not cached: the verifying key used by `zkagent_verify` (2 ms of a 12 ms verify —
+see above, deliberately left alone), and the policy (a few hundred bytes, and it
+must be re-read to notice an edited one).
+
 ## The one measurement this project got wrong first
 
 `keys/vk.bin` was **28 936 B** and every CLI `verify` said

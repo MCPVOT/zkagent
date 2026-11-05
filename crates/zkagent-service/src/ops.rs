@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 
 use zkagent_core::{Action, Authority, Policy, Receipt, SeenExecutions, SECRET_KEY_BYTES};
 use zkagent_proofs::prover::{
-    prove as prove_circuit, setup as run_setup, ProofBytes, ProvenExecution,
+    prove as prove_circuit, setup as run_setup, Keys, ProofBytes, ProvenExecution,
 };
 use zkagent_verifier::{verify as verify_proof, RejectReason, Verdict};
 
@@ -183,7 +183,67 @@ pub fn authorize(
     Ok(authorized)
 }
 
+/// Read and parse the key pair from `keys_dir`.
+///
+/// Split out of [`prove`] so a long-lived host can pay for the key load once.
+/// Decompressing `pk.bin` is ~258 ms of a ~600 ms one-shot prove on this laptop
+/// (see `zkagent-proofs/src/keyfile.rs`), and a CLI pays it once per process
+/// anyway — but an MCP server or a Tauri app pays it once per *call* unless it
+/// keeps the parsed key. That is a host decision, so it is a host-visible
+/// function rather than hidden global state: `zkagent-mcp` caches the result,
+/// `zkagent-cli` calls [`prove`] and lets the process exit.
+///
+/// The key is still validated exactly as before: compressed points, on-curve and
+/// in-subgroup checks (`Compress::Yes`, `Validate::Yes`) inside the parser.
+///
+/// # Errors
+/// Returns [`ServiceError::Io`] when either file cannot be read, and
+/// [`ServiceError::Verification`] when either file is not a valid key.
+pub fn load_keys(keys_dir: &Path) -> Result<Keys, ServiceError> {
+    let pk_path = keys_dir.join("pk.bin");
+    let vk_path = keys_dir.join("vk.bin");
+    let pk_bytes = fs::read(&pk_path).map_err(|e| ServiceError::io(&pk_path, e))?;
+    let vk_bytes = fs::read(&vk_path).map_err(|e| ServiceError::io(&vk_path, e))?;
+
+    let proving = zkagent_proofs::prover::proving_key_from_bytes(&pk_bytes)
+        .map_err(|e| ServiceError::Verification(e.to_string()))?;
+    let verifying = zkagent_proofs::prover::verifying_key_from_bytes(&vk_bytes)
+        .map_err(|e| ServiceError::Verification(e.to_string()))?;
+
+    Ok(Keys { proving, verifying })
+}
+
+/// Produce the Groth16 proof for an execution, with the key pair already loaded.
+///
+/// Same proof, same rules as [`prove`]; it just does not touch the key files.
+/// A caller that holds a key from [`load_keys`] is responsible for noticing that
+/// the files changed underneath it.
+///
+/// # Errors
+/// Returns [`ServiceError::Io`] when the policy cannot be read,
+/// [`ServiceError::Malformed`] when it cannot be parsed, and
+/// [`ServiceError::Verification`] when the proof cannot be produced.
+pub fn prove_with_keys(
+    keys: &Keys,
+    policy_path: &Path,
+    receipt: &Receipt,
+    actions: &[Action],
+) -> Result<ProvenExecution, ServiceError> {
+    let signed = read_signed_policy(policy_path)?;
+    let policy = signed
+        .policy
+        .to_policy()
+        .map_err(ServiceError::InvalidPolicy)?;
+
+    prove_circuit(keys, &policy, receipt, actions)
+        .map_err(|e| ServiceError::Verification(e.to_string()))
+}
+
 /// Produce the Groth16 proof for an execution.
+///
+/// Loads the key pair from `keys_dir` and proves with it — the right shape for a
+/// one-shot process. A long-lived host should call [`load_keys`] once and
+/// [`prove_with_keys`] per call instead.
 ///
 /// The returned [`ProvenExecution`] carries the receipt with its `trace_root`
 /// filled in from the private witness. A host MUST publish *that* receipt (or
@@ -201,25 +261,8 @@ pub fn prove(
     receipt: &Receipt,
     actions: &[Action],
 ) -> Result<ProvenExecution, ServiceError> {
-    let signed = read_signed_policy(policy_path)?;
-    let policy = signed
-        .policy
-        .to_policy()
-        .map_err(ServiceError::InvalidPolicy)?;
-
-    let pk_bytes = fs::read(keys_dir.join("pk.bin"))
-        .map_err(|e| ServiceError::io(keys_dir.join("pk.bin"), e))?;
-    let vk_bytes = fs::read(keys_dir.join("vk.bin"))
-        .map_err(|e| ServiceError::io(keys_dir.join("vk.bin"), e))?;
-
-    let proving = zkagent_proofs::prover::proving_key_from_bytes(&pk_bytes)
-        .map_err(|e| ServiceError::Verification(e.to_string()))?;
-    let verifying = zkagent_proofs::prover::verifying_key_from_bytes(&vk_bytes)
-        .map_err(|e| ServiceError::Verification(e.to_string()))?;
-    let keys = zkagent_proofs::prover::Keys { proving, verifying };
-
-    prove_circuit(&keys, &policy, receipt, actions)
-        .map_err(|e| ServiceError::Verification(e.to_string()))
+    let keys = load_keys(keys_dir)?;
+    prove_with_keys(&keys, policy_path, receipt, actions)
 }
 
 /// Verify a proof, with the replay gate applied when `seen` is given.

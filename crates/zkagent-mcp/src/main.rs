@@ -10,12 +10,16 @@ use std::io::{self, BufRead, Write};
 
 use serde_json::Value;
 
-use zkagent_mcp::handle;
+use zkagent_mcp::Server;
 
 fn main() {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut out = stdout.lock();
+
+    // One server for the life of the process: it holds the parsed proving key,
+    // so the second and later prove calls skip the ~258 ms decompress.
+    let server = Server::new();
 
     for line in stdin.lock().lines() {
         let line = match line {
@@ -45,7 +49,7 @@ fn main() {
             }
         };
 
-        if let Some(response) = handle(&request) {
+        if let Some(response) = server.handle(&request) {
             write_line(&mut out, &response);
         }
     }

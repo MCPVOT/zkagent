@@ -34,6 +34,20 @@ dependency is enough to name every value you will handle.
 | `prove(keys_dir, policy_path, receipt, actions)` | produces the proof | reads the above |
 | `verify(keys_dir, policy_path, receipt, proof, now, seen)` | verifies + replay gate | reads the above, maybe `seen.json` |
 
+`prove` is the one-shot shape: it reads and parses `pk.bin` (~258 ms) on every
+call. A host that proves more than once per process splits it:
+
+| Function | Does |
+|---|---|
+| `load_keys(keys_dir)` | reads + parses the key pair, once |
+| `prove_with_keys(keys, policy_path, receipt, actions)` | proves with that pair, touching no key file |
+
+The host then owns staleness: it must notice that a key was regenerated and
+reload instead of proving with the old one. `zkagent-mcp` does it with a
+fingerprint of both key files (length, mtime, ctime, and a hash of the head and
+tail of each); see `crates/zkagent-mcp/src/keycache.rs` and the "MCP server pays
+the key load once" section of `docs/MEASUREMENTS.md` for the numbers.
+
 ## Rules every host inherits
 
 These live in `zkagent-service`, so a host cannot get them wrong by forgetting:
