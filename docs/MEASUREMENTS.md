@@ -156,6 +156,68 @@ Keeping `parallel` on is a deliberate trade: rayon in the dependency tree and a
 little peak memory for ~2× proving. A memory-constrained box can build serial —
 on the droplet, memory is the constraint (3 GB total), not CPU.
 
+## Where `prove` actually spent its ~920 ms, and what fixed it
+
+Measured **2026-11-04** (Ryzen 5 4600H, 6c/12t, release, `CARGO_BUILD_JOBS=4`,
+2 actions, 7 442 constraints). Phase timers were temporary and are not in the
+shipped code; the numbers are the reason the shipped code has the shape it has.
+
+| Phase | Before | After |
+|---|---|---|
+| read + decompress `pk.bin` (1 449 328 B) | **734 ms** | **258 ms** |
+| synthesize the circuit + `is_satisfied` | 26 ms | 25 ms |
+| Groth16 (witness map + MSMs) | 149 ms | 132 ms |
+| process start, policy parse, write proof | ~15 ms | ~15 ms |
+
+The surprise is that the arithmetic was 19% of the command. `pk.bin` is 45 291
+compressed points and decompressing one costs a field square root; arkworks'
+`impl CanonicalDeserialize for Vec<Affine>` solves them **one at a time**,
+whereas it already parallelises the on-curve/subgroup `batch_check` with rayon.
+So the serial part was the square roots.
+
+Two changes, both with the constraint system and the proof untouched:
+
+1. `crates/zkagent-proofs/src/keyfile.rs` decompresses the fixed-width point
+   blocks on the rayon pool (same bytes, same field order, same per-point
+   validation; a test asserts the parallel reader equals the derived one and
+   that re-serialising it reproduces the input byte for byte). **734 → 258 ms.**
+   Dropping validation would take it to 87 ms — measured, rejected: the key is
+   still checked, just checked in parallel.
+2. `prove` used to synthesize the circuit twice (once to check the witness, once
+   inside `Groth16::prove`). It now proves from the constraint system it already
+   synthesised and checked. **175 → 157 ms of prover CPU.**
+
+Before/after, alternating binaries so both see the same thermal state (6 runs
+each; identical fixture, keys, policy and actions):
+
+| | before | after |
+|---|---|---|
+| `prove` | 941 925 931 921 930 916 ms → mean **927**, range 916–941 | 423 446 439 441 436 439 ms → mean **437**, range 423–446 |
+| `verify` | 11 13 13 11 14 12 ms → mean **12.3** | 12 11 11 11 11 9 ms → mean **10.8** |
+| startup (`version`) | 6 ms | 5 ms |
+
+`prove` is **2.12×** faster. `verify` is unchanged within noise — it was not
+touched, and this run says so rather than claiming a win.
+
+Artifacts are unchanged, checked rather than assumed: `setup --seed 7` still
+produces `pk.bin` and `vk.bin` with the same sha256 as before the change, and
+the `proof.json` for the fixture is byte-identical (sha256
+`9763e5c6…1392cd3`).
+
+### Tried, measured, reverted
+
+* **`lto = "fat"`** (was `"thin"`): prove 436 448 453 ms → mean 446 vs 430 with
+  thin. Slightly worse, and the build went from ~25 s to 80 s. Reverted.
+* **Rayon thread count** `RAYON_NUM_THREADS=1/2/4/6/8/12`: 2330 / 1489 / 1102 /
+  1010 / 951 / 922 ms (best of 3). More than the 6 physical cores keeps helping
+  — MSM is throughput-bound, not latency-bound — so the default (one thread per
+  logical CPU) is already the right setting. No change made.
+* **Verifier (11 ms)**: `vk` parse 2.0 ms (0.74 ms of it subgroup checks),
+  proof parse 0.3 ms, `process_vk` 1.6 ms, pairing 1.9 ms, the rest process
+  startup. Parallelising the vk parse and `process_vk` would recover roughly
+  1.3 ms of 11 ms for two more custom parsers — not worth the surface. Left
+  alone deliberately.
+
 ## The one measurement this project got wrong first
 
 `keys/vk.bin` was **28 936 B** and every CLI `verify` said
