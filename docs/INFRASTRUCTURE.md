@@ -2,18 +2,19 @@
 
 Where zkagent runs, and what each machine is allowed to be trusted with.
 
-All nodes are on one Tailscale tailnet (`tailbe8207.ts.net`). Other nodes on it
-belong to other projects and are deliberately not listed here: this document is
-the ZK workstream's inventory, not the network's.
+The nodes sit on one private network. Hostnames and addresses are deliberately
+omitted here: this document describes the *shape* of the deployment, and the
+concrete inventory lives in private operations notes. Nothing in the protocol
+depends on knowing an address.
 
 ## Nodes
 
-| Node | Tailscale IP | OS | Role | Observed |
-|---|---|---|---|---|
-| **Nastra** | 100.79.140.113 | Windows 11 | primary development host: builds, proves, verifies, runs CI-locally | online (this host) |
-| **hoodbot-brain** | 100.111.194.19 | Linux, 2 vCPU / 3 GB, no GPU | droplet: candidate proving service and always-on MCP server | reachable |
-| **organix** | 100.81.134.62 | Windows | previous laptop: builds and verifies | offline, last seen 1 day ago |
-| **organixs** | 100.64.216.53 | Android | phone: verifier only | idle |
+| Node | OS | Role | Notes |
+|---|---|---|---|
+| **development host** | Linux, x86_64 | primary development: builds, proves, verifies, runs the local gate | 6 cores, no GPU, integrated graphics |
+| **droplet** | Linux, 2 vCPU / 3 GB, no GPU | candidate proving service and always-on MCP server | no Rust build of this tree yet |
+| **previous laptop** | Windows 11 | secondary build and verify host | intermittent |
+| **phone** | Android | verifier only | demonstrates that verification is portable |
 
 ## What runs where, and why
 
@@ -41,8 +42,8 @@ build of this tree yet and the laptop cannot cross-compile to it. To turn the
 estimate into a number:
 
 ```bash
-# on hoodbot-brain
-git clone git@github.com:MCPVOT/zkagent.git && cd zkagent
+# on the droplet
+git clone https://github.com/MCPVOT/zkagent.git && cd zkagent
 cargo build --release
 ./target/release/zkagent setup --seed 7 --out keys/
 time ./target/release/zkagent prove --keys keys/ --policy policy.json \
@@ -72,7 +73,7 @@ portable, and it is.
 
 ## Adding a node
 
-1. Join it to the tailnet.
+1. Put it on the private network.
 2. Decide its role from the table above — do not give a node a role it cannot
    justify (a phone does not prove).
 3. If it proves, record its measured prove/verify time in `docs/MEASUREMENTS.md`

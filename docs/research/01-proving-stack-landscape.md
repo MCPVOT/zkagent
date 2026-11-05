@@ -193,7 +193,7 @@ Take **Plonky3 directly** if you want to author your own AIR for a bespoke attes
 
 ## Hardware reality check (applies to every zkVM candidate)
 
-Verified baseline for our environment: droplet `hoodbot@100.111.194.19`, 2 vCPU / 3 GB RAM / 20 GB free disk, **no GPU**.
+Verified baseline for our environment: a droplet with 2 vCPU / 3 GB RAM / 20 GB free disk, **no GPU**.
 
 - SP1 local proving minimums: Mock/Network 8 GB+, Core/Compress **16 GB+**, Groth16 wrap ~14 GB, **PLONK wrap ~60 GB**, plus a 24 GB-VRAM NVIDIA GPU for acceleration.[28]
 - RISC Zero: "we recommend at least 16 GB of RAM" to prove locally, and steers users to remote proving below that.[29]

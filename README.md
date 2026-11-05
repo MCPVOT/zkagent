@@ -33,7 +33,7 @@ perform inside the policy.
 
 ## Status
 
-**Private development.** Working end-to-end on BN254/Groth16: circuit, prover,
+**Working end-to-end, early.** BN254/Groth16: circuit, prover,
 verifier, CLI, and a test suite that includes the negative cases (over-cap,
 disallowed target, expired, tampered receipt, wrong key, wrong verifying key).
 See `docs/ARCHITECTURE.md` for the design, the threat model, and what is
