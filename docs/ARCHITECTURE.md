@@ -1,6 +1,6 @@
 # zkagent — Research Architecture
 
-**Status:** private development, v0 working end-to-end on BN254/Groth16.
+**Status:** v0, working end-to-end on BN254/Groth16; early, and explicit about what is not claimed.
 **Written:** 2026-10-27.
 **Scope:** this document is the *architecture*, not a summary. It records what was
 researched, what was decided, what was built, what was measured, what is
@@ -575,7 +575,7 @@ runtime that performed the work.
 
 Measured on 2026-10-27, not assumed.
 
-### 10.1 The droplet (`hoodbot@100.111.194.19`, hostname `hoodbot-brain`)
+### 10.1 The droplet (2 vCPU / 3 GB, no GPU)
 
 | Fact | Value | Consequence |
 |---|---|---|
@@ -584,8 +584,8 @@ Measured on 2026-10-27, not assumed.
 | Rust | 1.98.1 | newer than the laptop's 1.97.1; same code builds on both |
 | cargo registry cache | 444 MB | vendorable; offline builds are already the norm there |
 | Firecrawl | CLI 1.26.3, working (scraped zk podcast live) | research passes are cheap and real |
-| Hermes profiles | 7 (hoodbot, bounty, solana, storemoat, sentinel, mcpvot, jevprune-test) | a verification service can live in its own profile |
-| cron | 15 jobs under `hoodbot`, 2 under `bounty`, 1 each under sentinel/storemoat | the scheduling substrate already exists |
+| Hermes profiles | 7, across separate ecosystems | a verification service can live in its own profile |
+| cron | 18 jobs spread across the main profile and two others | the scheduling substrate already exists |
 | gateway | `hermes-brain.service` + multiplexed `hermes-gateway-host.service` | two gateways already contend for profiles — do not add a third |
 
 **What this means:** the droplet can *prove and verify* this protocol today. It
@@ -596,14 +596,11 @@ service with its own gateway.
 
 ### 10.2 The Hermes profiles (laptop, read-only survey)
 
-| Profile | Model | Skills | MCP servers | Notes relevant to ZK work |
-|---|---|---|---|---|
-| `mcpvot` | deepseek-v4.1-flash (OpenRouter) | 42 | 106 | this work; largest tool surface |
-| `ofcrm` | deepseek-v4.1-flash | 29 | 29 | separate ecosystem — not a ZK target |
-| `organix` | minimax-m3.1-flash-free | 23 | 19 | separate ecosystem |
-| `polloriko` | deepseek-v4.1-flash | 15 | 10 | separate ecosystem |
-| `vot` | deepseek-v4.1-flash (openrouter-vot) | 21 | 43 | separate ecosystem |
-| `jevprune-test` | deepseek-v4.1-flash | 12 | 108 | throwaway; do not build on it |
+The development host runs several Hermes profiles, one per ecosystem: each has
+its own model configuration, its own skill set and its own MCP servers. The
+survey measured them (profile count, skills per profile, MCP servers per
+profile) and the numbers are not reproduced here because they are estate
+inventory, not protocol facts.
 
 **Honest reading:** none of the other profiles are ZK workstreams and must not be
 mixed into this one. The only cross-profile fact that matters is capability
@@ -615,7 +612,7 @@ of the client ecosystems.
 ### 10.3 Why a separate repo rather than a folder in an existing one
 
 The three client ecosystems are hard-isolated by standing rule, and the ZK work
-is a fourth thing that will be **published**. A separate private repo
+is a fourth thing that will be **published**. A separate repository
 (`MCPVOT/zkagent`) means: no secret can leak from a client project into a repo
 that later becomes public, and the public history starts clean. A pointer note
 in `mcpvot-app/docs/research/zk/` keeps it discoverable from the main research
