@@ -244,7 +244,7 @@ pub fn prove(
 /// Stays here rather than in `zkagent-wire`: a proving key is a prover artifact,
 /// and moving it would drag the prover's concerns back into the wire crate.
 ///
-/// The parse itself lives in [`crate::keyfile`]: the same bytes, the same field
+/// The parse itself lives in `crate::keyfile`: the same bytes, the same field
 /// order and the same per-point validation, with the square roots decompressed in
 /// parallel. That loop was measured at 734 ms of a 920 ms `prove`, so it is worth
 /// a thread pool; the arithmetic it feeds is 175 ms.
