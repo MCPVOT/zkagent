@@ -1,24 +1,24 @@
 {
   "repo": "MCPVOT/zkagent",
-  "generated_at": "2026-11-05T12:23:41Z",
-  "generated_pacific": "Nov 05, 2026 04:23 AM PST",
+  "generated_at": "2026-11-05T21:59:57Z",
+  "generated_pacific": "Nov 05, 2026 01:59 PM PST",
   "since": "2026-11-05T08:00:00Z",
   "since_caption": "new since 12:00 AM Pacific (America/Los_Angeles)",
-  "today_total": 0,
+  "today_total": 2,
   "ranked_by": "merged_prs",
-  "merged_pr_total": 16,
+  "merged_pr_total": 18,
   "unattributed_prs": [],
   "contributors": [
     {
       "login": "MCPVOT",
       "avatar_url": "https://github.com/MCPVOT.png?size=200",
-      "merged_prs": 16,
+      "merged_prs": 18,
       "issues_filed": 3,
-      "today_prs": 0,
-      "today_badge": "<span class=\"delta delta-none\" title=\"none since midnight Pacific\">&ndash;</span>",
-      "score": 16,
+      "today_prs": 2,
+      "today_badge": "<span class=\"delta delta-up\" title=\"+2 new since 12:00 AM Pacific (America/Los_Angeles)\"><svg viewBox=\"0 0 10 9\" width=\"14\" height=\"12\" aria-label=\"up\"><polygon points=\"5,0 10,9 0,9\"/></svg>+2</span>",
+      "score": 18,
       "first_contribution": "2026-10-29T13:57:17Z",
-      "last_contribution": "2026-11-03T14:23:16Z",
+      "last_contribution": "2026-11-05T16:09:16Z",
       "pr_numbers": [
         1,
         2,
@@ -35,7 +35,9 @@
         16,
         17,
         18,
-        19
+        19,
+        20,
+        21
       ],
       "issue_numbers": [
         12,
