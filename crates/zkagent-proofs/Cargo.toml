@@ -19,6 +19,10 @@ ark-r1cs-std = { version = "0.5.0", default-features = false, features = ["std"]
 ark-serialize = { version = "0.5.0", default-features = false, features = ["derive", "std"] }
 ark-snark = { version = "0.5.1", default-features = false }
 ark-std = { version = "0.5.0", default-features = false, features = ["std"] }
+# Used to decompress the proving key's point vectors in parallel. Decompressing
+# a BN254 point costs a field square root and arkworks' `Vec<Affine>` reader does
+# them one at a time; that loop was 80% of `prove` (see `src/keyfile.rs`).
+rayon = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex = "0.4"

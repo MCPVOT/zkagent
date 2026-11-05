@@ -9,6 +9,7 @@
 #![deny(unsafe_code)]
 
 pub mod circuit;
+mod keyfile;
 pub mod merkle;
 pub mod prover;
 

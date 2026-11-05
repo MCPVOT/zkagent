@@ -21,7 +21,7 @@
 
 use ark_bn254::Bn254;
 use ark_groth16::{Groth16, ProvingKey, VerifyingKey};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::CanonicalSerialize;
 use ark_snark::SNARK;
 use ark_std::rand::rngs::StdRng;
 use ark_std::rand::SeedableRng;
@@ -204,9 +204,13 @@ pub fn prove(
 ///
 /// Stays here rather than in `zkagent-wire`: a proving key is a prover artifact,
 /// and moving it would drag the prover's concerns back into the wire crate.
+///
+/// The parse itself lives in [`crate::keyfile`]: the same bytes, the same field
+/// order and the same per-point validation, with the square roots decompressed in
+/// parallel. That loop was measured at 734 ms of a 920 ms `prove`, so it is worth
+/// a thread pool; the arithmetic it feeds is 175 ms.
 pub fn proving_key_from_bytes(bytes: &[u8]) -> Result<ProvingKey<Bn254>, ProverError> {
-    ProvingKey::<Bn254>::deserialize_compressed(bytes)
-        .map_err(|e| ProverError::Serialise(e.to_string()))
+    crate::keyfile::proving_key_from_bytes(bytes).map_err(|e| ProverError::Serialise(e.to_string()))
 }
 
 impl From<WireError> for ProverError {
