@@ -16,7 +16,7 @@ Verification environment (measured, not assumed):
 | machine | rustc | arch | build time (clean, `--release`, -j2) | peak build RSS |
 |---|---|---|---|---|
 | laptop (Windows 11, git-bash) | 1.97.1 (8bab26f4e 2026-07-14) | x86_64-pc-windows-msvc | ~3 min | n/a |
-| droplet `hoodbot@100.111.194.19` | 1.98.1 (48a229cea 2026-09-01) | 2 vCPU / 3.9 GB, no GPU | 3 m 14 s | 509 984 kB |
+| droplet (2 vCPU / 3.9 GB) | 1.98.1 (48a229cea 2026-09-01) | 2 vCPU / 3.9 GB, no GPU | 3 m 14 s | 509 984 kB |
 
 Everything below is CPU-only. No GPU, no trusted setup ceremony, no external service.
 
@@ -1080,9 +1080,9 @@ Add `export CARGO_BUILD_JOBS=4` if you are memory-constrained; nothing here need
 
 ```bash
 # sync from the laptop first (git-bash; native paths, no /c/ prefix for scp targets)
-rsync -az --exclude target --exclude vendor Desktop/zkagent/ hoodbot@100.111.194.19:~/zkagent/
+rsync -az --exclude target --exclude vendor Desktop/zkagent/ droplet:~/zkagent/
 
-ssh hoodbot@100.111.194.19
+ssh droplet
 export PATH=$HOME/.cargo/bin:$PATH            # cargo is at ~/.cargo/bin, NOT on the default PATH
 cd ~/zkagent
 export CARGO_BUILD_JOBS=2                     # measured: peak rustc RSS 509 MB with -j2
