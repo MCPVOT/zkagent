@@ -44,8 +44,8 @@
 //!
 //! This is the one piece of state the server keeps: the parsed proving key. An
 //! MCP server is a long-lived process driven by many `tools/call`s, and parsing
-//! `pk.bin` costs ~258 ms of the ~400 ms a prove call takes end to end (see
-//! [`keycache`]). A CLI pays it once and exits; a server would pay it on every
+//! `pk.bin` costs ~258 ms of the ~400 ms a prove call takes end to end (the
+//! cache lives in this crate's private `keycache` module). A CLI pays it once and exits; a server would pay it on every
 //! call. The cache is keyed by the canonical keys directory plus a fingerprint of
 //! both key files, so a regenerated key is noticed and reloaded rather than
 //! served stale. Tool arguments, tool results and the key validation are
