@@ -204,6 +204,12 @@ produces `pk.bin` and `vk.bin` with the same sha256 as before the change, and
 the `proof.json` for the fixture is byte-identical (sha256
 `9763e5c6…1392cd3`).
 
+*Update after the RNG fix:* that byte-identity was itself a defect. Blinding was drawn from a
+fixed seed, so identical witnesses produced identical proofs. `r` and `s` now come from
+`OsRng` on every call, so two proofs over this fixture differ and both verify. The sentence
+above is kept as the record of the perf change, not as a property to preserve; the key files
+from a seeded setup are still reproducible, and `--seed` is now explicitly test-only.
+
 ### Tried, measured, reverted
 
 * **`lto = "fat"`** (was `"thin"`): prove 436 448 453 ms → mean 446 vs 430 with

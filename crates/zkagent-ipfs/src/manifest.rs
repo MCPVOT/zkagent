@@ -16,8 +16,8 @@
 //!   "version": 1,
 //!   "circuit": {
 //!     "vk": { "cid": "bafkrei…", "bytes": 712, "sha256": "…" },
-//!     "constraints": 3333,
-//!     "public_inputs": 15,
+//!     "constraints": 7442,
+//!     "public_inputs": 16,
 //!     "format_version": 2
 //!   },
 //!   "policy":  { "cid": "bafkrei…", "bytes": 421, "sha256": "…" },

@@ -369,8 +369,14 @@ fn tool_schemas() -> Vec<Value> {
 
 fn tool_setup(args: &Value) -> Result<Value, RpcError> {
     let keys_dir = PathBuf::from(req_str(args, "keys_dir")?);
-    let seed = opt_u64(args, "seed").unwrap_or(7);
-    let outcome = zkagent_service::setup(&keys_dir, seed).map_err(|e| RpcError {
+    // No default seed: a default of 7 made every default key pair publicly reproducible,
+    // which hands the trapdoor to anyone who bothers to regenerate it. Callers who pass a
+    // seed get the deterministic, test-only path and are told so in the outcome.
+    let outcome = match opt_u64(args, "seed") {
+        Some(seed) => zkagent_service::setup(&keys_dir, seed),
+        None => zkagent_service::setup_random(&keys_dir),
+    }
+    .map_err(|e| RpcError {
         code: -32000,
         message: e.to_string(),
     })?;
@@ -703,8 +709,9 @@ mod tests {
 
         assert_eq!(first["result"]["isError"], json!(false));
         assert_eq!(second["result"]["isError"], json!(false));
-        // Same key, same witness, same proof: the cached key is the key.
-        assert_eq!(first_proof, second_proof);
+        // Fresh Groth16 blinding on every call: the two proofs must differ, and the identical
+        // public inputs are what show the same cached proving key served both.
+        assert_ne!(first_proof, second_proof);
         assert_eq!(
             first["result"]["structuredContent"]["public_inputs"],
             second["result"]["structuredContent"]["public_inputs"]

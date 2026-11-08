@@ -24,7 +24,7 @@ use ark_ff::UniformRand;
 use ark_groth16::{Groth16, ProvingKey, VerifyingKey};
 use ark_serialize::CanonicalSerialize;
 use ark_snark::SNARK;
-use ark_std::rand::rngs::StdRng;
+use ark_std::rand::rngs::{OsRng, StdRng};
 use ark_std::rand::SeedableRng;
 
 use zkagent_core::{Action, Policy, Receipt, MAX_ACTIONS};
@@ -85,12 +85,26 @@ impl Keys {
     }
 }
 
-/// Runs a circuit-specific trusted setup.
+/// Runs a circuit-specific trusted setup from OS entropy. This is the production path.
 ///
-/// `seed` makes the setup reproducible for tests. In production, pass a seed
-/// from a real entropy source and destroy it afterwards; even better, replace
-/// this with a multi-party ceremony.
+/// The toxic waste is the RNG stream, so it must come from a source nobody else can
+/// reproduce. A fixed seed would let anyone regenerate this exact key pair and with it the
+/// trapdoor, which breaks soundness for every proof made under it.
+pub fn setup_random() -> Result<Keys, ProverError> {
+    setup_inner(None)
+}
+
+/// Runs a circuit-specific trusted setup deterministically. **Tests and demos only.**
+///
+/// `seed` makes the setup reproducible, which is exactly why it must never key a real
+/// deployment: anyone who knows the seed can reproduce the toxic waste. Use
+/// [`setup_random`] everywhere else. Even a random-looking `u64` seed offers at most 64
+/// bits of entropy and is not a substitute for a multi-party ceremony.
 pub fn setup(seed: u64) -> Result<Keys, ProverError> {
+    setup_inner(Some(seed))
+}
+
+fn setup_inner(seed: Option<u64>) -> Result<Keys, ProverError> {
     // The circuit shape is fixed by the protocol constants, so any well-formed
     // policy/receipt produces the same constraint system. We use a minimal
     // dummy instance purely to fix the shape.
@@ -105,9 +119,17 @@ pub fn setup(seed: u64) -> Result<Keys, ProverError> {
         trace_root: [0u8; 32],
     };
     let circuit = build_circuit(&policy, &receipt, &[]);
-    let mut rng = StdRng::seed_from_u64(seed);
-    let (proving, verifying) = Groth16::<Bn254>::circuit_specific_setup(circuit, &mut rng)
-        .map_err(|e| ProverError::Setup(format!("{e:?}")))?;
+    let (proving, verifying) = match seed {
+        Some(seed) => {
+            let mut rng = StdRng::seed_from_u64(seed);
+            Groth16::<Bn254>::circuit_specific_setup(circuit, &mut rng)
+        }
+        None => {
+            let mut rng = OsRng;
+            Groth16::<Bn254>::circuit_specific_setup(circuit, &mut rng)
+        }
+    }
+    .map_err(|e| ProverError::Setup(format!("{e:?}")))?;
     Ok(Keys { proving, verifying })
 }
 
@@ -209,7 +231,11 @@ pub fn prove(
         .concat()
     };
 
-    let mut rng = StdRng::seed_from_u64(0xA6E7);
+    // Fresh blinding for EVERY proof. Groth16's zero-knowledge argument assumes r and s are
+    // sampled independently per proof: a fixed seed would make identical witnesses produce
+    // byte-identical proofs, link executions to each other, and void the assumption the
+    // construction relies on. OsRng is the only correct source here.
+    let mut rng = OsRng;
     let r = CircuitField::rand(&mut rng);
     let s = CircuitField::rand(&mut rng);
     let proof = Groth16::<Bn254>::create_proof_with_reduction_and_matrices(

@@ -55,9 +55,11 @@ enum Command {
     Version,
     /// Run the circuit-specific trusted setup and write the key pair.
     Setup {
-        /// Seed for the setup RNG. Fixed seeds are for tests only.
-        #[arg(long, default_value_t = 7)]
-        seed: u64,
+        /// Deterministic setup seed. TESTS AND DEMOS ONLY: a fixed seed lets anyone
+        /// reproduce the toxic waste and forge proofs under these keys. Omit this flag for a
+        /// setup drawn from OS entropy, which is what a real install must use.
+        #[arg(long)]
+        seed: Option<u64>,
         /// Directory to write `vk.bin` and `pk.bin` into.
         #[arg(long)]
         out: PathBuf,
@@ -258,7 +260,17 @@ fn run() -> Result<ExitCode, String> {
         }
 
         Command::Setup { seed, out } => {
-            let outcome = zkagent_service::setup(&out, seed).map_err(|e| e.to_string())?;
+            let outcome = match seed {
+                Some(seed) => {
+                    eprintln!(
+                        "warning: seeded setup is reproducible by anyone who knows the seed; \
+                         use it for tests only"
+                    );
+                    zkagent_service::setup(&out, seed)
+                }
+                None => zkagent_service::setup_random(&out),
+            }
+            .map_err(|e| e.to_string())?;
             println!(
                 "setup complete: {} (vk {} B, pk {} B)",
                 outcome.keys_dir.display(),

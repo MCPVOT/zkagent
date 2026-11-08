@@ -162,6 +162,18 @@ pub fn check_disclosure(disclosure: &Disclosure, receipt: &Receipt) -> Result<()
     let mut steps = Vec::with_capacity(disclosure.path.len());
     for (level, step) in disclosure.path.iter().enumerate() {
         let sibling = parse_hex32(&step.sibling, &format!("path[{level}].sibling"))?;
+        // The claimed slot must agree with the path's directions. Membership alone proves a
+        // digest is somewhere in the set, not that it sits at `index`: without this check a
+        // valid disclosure for one slot could be relabelled as any other slot and still
+        // verify, while the artifact asserts a position it never had.
+        let expected_left = (disclosure.index >> level) & 1 == 0;
+        if step.left != expected_left {
+            return Err(format!(
+                "path[{level}] has left={} but slot {} requires left={expected_left}: the claimed \
+                 index does not match this inclusion path",
+                step.left, disclosure.index
+            ));
+        }
         steps.push(Step {
             sibling: field_from_bytes(&sibling),
             node_is_left: step.left,
@@ -189,4 +201,60 @@ fn parse_hex32(value: &str, field: &str) -> Result<[u8; ROOT_BYTES], String> {
         )
     })?;
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn actions() -> Vec<Action> {
+        vec![
+            Action { target: 3, amount: 250, trace_digest: 11 },
+            Action { target: 7, amount: 150, trace_digest: 22 },
+            Action { target: 9, amount: 50, trace_digest: 33 },
+        ]
+    }
+
+    fn receipt_for(actions: &[Action]) -> Receipt {
+        Receipt {
+            total_amount: actions.iter().map(|a| a.amount).sum(),
+            action_count: actions.len() as u32,
+            completed_at: 1_500,
+            chain_id: 1,
+            execution_id: 1_001,
+            trace_root: root_bytes_for_actions(actions),
+        }
+    }
+
+    #[test]
+    fn a_disclosure_verifies_at_its_own_slot() {
+        let actions = actions();
+        let receipt = receipt_for(&actions);
+        for index in 0..actions.len() {
+            let disclosure = disclose(&actions, index, &receipt).expect("disclose");
+            check_disclosure(&disclosure, &receipt).expect("must verify at its own slot");
+        }
+    }
+
+    #[test]
+    fn a_relabelled_index_is_rejected_even_though_the_leaf_is_still_in_the_set() {
+        let actions = actions();
+        let receipt = receipt_for(&actions);
+        let mut disclosure = disclose(&actions, 0, &receipt).expect("disclose");
+        check_disclosure(&disclosure, &receipt).expect("the unmodified disclosure verifies");
+        // The leaf and its path are untouched, so this is a positional forgery, not a
+        // membership forgery: it is exactly the case an index range check alone misses.
+        disclosure.index = 2;
+        let error = check_disclosure(&disclosure, &receipt).expect_err("relabelling must fail");
+        assert!(error.contains("index"), "error must name the index mismatch: {error}");
+    }
+
+    #[test]
+    fn flipping_a_path_direction_is_rejected() {
+        let actions = actions();
+        let receipt = receipt_for(&actions);
+        let mut disclosure = disclose(&actions, 1, &receipt).expect("disclose");
+        disclosure.path[0].left = !disclosure.path[0].left;
+        assert!(check_disclosure(&disclosure, &receipt).is_err());
+    }
 }

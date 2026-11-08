@@ -120,7 +120,7 @@ Our target is a **2 vCPU / 3 GB RAM droplet**.[21] Against that budget:
 
 | System | Documented or measured floor | vs 3 GB | Fits? |
 |---|---|---|---|
-| Our Groth16 circuit (3333 constraints) | 29 MB peak RSS, serial, measured on the droplet for the smaller probe circuit;[21] proving key 648,816 B | 0.01× | **Yes, with ~100× headroom** |
+| Our Groth16 circuit (7442 constraints) | 29 MB peak RSS, serial, measured on the droplet for the smaller probe circuit;[21] proving key 648,816 B | 0.01× | **Yes, with ~100× headroom** |
 | Groth16 (benchmark median, setup included) | 280 MB peak[1] | 0.09× | Yes |
 | Plonky3 | 11 MB peak[1] | 0.004× | Yes |
 | Winterfell | 8.3 MB peak[1] | 0.003× | Yes |
@@ -216,7 +216,7 @@ A report that only lists favourable numbers is advocacy. These cut against the w
 18. Wang, Hoang. *ezDPS: An Efficient and Zero-Knowledge Machine Learning Inference Pipeline.* arXiv:2212.05428. https://arxiv.org/abs/2212.05428
 19. Rahimi, Khalaj, Maddah-Ali. *Range-Arithmetic: Verifiable Deep Learning Inference on an Untrusted Party.* arXiv:2505.17623. https://arxiv.org/abs/2505.17623
 20. Lu, Wang, Qu, Wang et al. *An Efficient and Extensible Zero-knowledge Proof Framework for Neural Networks.* IACR ePrint 2024/703 (reports 41.4× speedup over Mystique on ResNet-101; GPT-2 117M in 287.1 s). https://eprint.iacr.org/2024/703
-21. Project-internal measurements: `docs/MEASUREMENTS.md` (3333 constraints, 15 public inputs, 128 B proof, 0.43–0.64 s parallel prove, 0.048–0.091 s verify, pk 648,816 B, vk 712 B, 29 MB RSS serial) and `crates/zkagent-proofs/src/circuit.rs:174` (`trace_digest` witness allocation). Local repository, read 2026-10-28.
+21. Project-internal measurements: `docs/MEASUREMENTS.md` (7442 constraints, 16 public inputs, 128 B proof, 0.43–0.64 s parallel prove, 0.048–0.091 s verify, pk 648,816 B, vk 712 B, 29 MB RSS serial) and `crates/zkagent-proofs/src/circuit.rs:174` (`trace_digest` witness allocation). Local repository, read 2026-10-28.
 
 ### Verification status of each number
 
@@ -231,6 +231,6 @@ A report that only lists favourable numbers is advocacy. These cut against the w
 | ezkl row | Reported by Jolt Atlas's authors from ezkl's own published benchmark — second-hand[5] |
 | SP1 mode ladder (§4) | Measured by zkbenchmarks on an RSP workload; version and settings not normalised against §2's SP1 row[13] |
 | SP1 ~260 B / RISC Zero 16 GB | **Vendor claims**, not independently reproduced[11][12] |
-| Our 3333 constraints / 128 B / timings | Measured in-repo, reproducible via `cargo test -p zkagent-proofs constraint_count_is_sane -- --nocapture`[21] |
+| Our 7442 constraints / 128 B / timings | Measured in-repo, reproducible via `cargo test -p zkagent-proofs constraint_count_is_sane -- --nocapture`[21] |
 | Peak RSS on the droplet for *this* circuit | **Not measured.** 29 MB is the smaller probe circuit, serial. Flagged as an open measurement in `MEASUREMENTS.md`[21] |
 | Any statement about zkVM cost for *our exact policy statement* | **Not measured and not projected here.** No zkVM port of the policy circuit exists; the 18.6×/62× figures are for the benchmark's own small workloads, not ours[1] |

@@ -2,7 +2,7 @@
 
 > **Provenance.** Every number in this report was measured on an **arkworks
 > 0.6.0** probe tree, and the probe circuit is an earlier shape than the shipped
-> v0. The shipped circuit measures **3 333 constraints / 15 public inputs**
+> v0. The shipped circuit measures **7 442 constraints / 16 public inputs**
 > (`docs/MEASUREMENTS.md`). This report's 2 162 / 9 is the probe, not the
 > product. See `README.md#measurement-provenance`.
 

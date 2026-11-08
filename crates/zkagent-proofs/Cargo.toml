@@ -18,7 +18,9 @@ ark-relations = { version = "0.5.1", default-features = false, features = ["std"
 ark-r1cs-std = { version = "0.5.0", default-features = false, features = ["std"] }
 ark-serialize = { version = "0.5.0", default-features = false, features = ["derive", "std"] }
 ark-snark = { version = "0.5.1", default-features = false }
-ark-std = { version = "0.5.0", default-features = false, features = ["std"] }
+# `getrandom` turns on `rand/std`, which is what exposes `rand::rngs::OsRng`. Proving needs it:
+# Groth16 blinding must be drawn from OS entropy on every proof, never a fixed seed.
+ark-std = { version = "0.5.0", default-features = false, features = ["std", "getrandom"] }
 # Used to decompress the proving key's point vectors in parallel. Decompressing
 # a BN254 point costs a field square root and arkworks' `Vec<Affine>` reader does
 # them one at a time; that loop was 80% of `prove` (see `src/keyfile.rs`).

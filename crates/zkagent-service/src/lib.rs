@@ -51,8 +51,8 @@ pub use disclosure::{check_disclosure, disclose, Disclosure, PathStep};
 pub use error::ServiceError;
 pub use ops::{
     authorize, load_keys, prove, prove_with_keys, read_actions, read_json, read_receipt,
-    read_signed_policy, resolve_authority, setup, verify, write_json, AuthorityKey, PolicySpec,
-    ResolvedAuthority, SetupOutcome, VerifyOutcome,
+    read_signed_policy, resolve_authority, setup, setup_random, verify, write_json, AuthorityKey,
+    PolicySpec, ResolvedAuthority, SetupOutcome, VerifyOutcome,
 };
 // Re-exported so a host needs ONE dependency, not three, to read a verdict.
 pub use zkagent_verifier::{RejectReason, Verdict};

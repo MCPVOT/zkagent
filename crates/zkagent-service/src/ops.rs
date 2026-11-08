@@ -34,7 +34,8 @@ use std::path::{Path, PathBuf};
 
 use zkagent_core::{Action, Authority, Policy, Receipt, SeenExecutions, SECRET_KEY_BYTES};
 use zkagent_proofs::prover::{
-    prove as prove_circuit, setup as run_setup, Keys, ProofBytes, ProvenExecution,
+    prove as prove_circuit, setup as run_setup, setup_random as run_setup_random, Keys, ProofBytes,
+    ProvenExecution, ProverError,
 };
 use zkagent_verifier::{verify as verify_proof, RejectReason, Verdict};
 
@@ -123,8 +124,18 @@ impl VerifyOutcome {
 /// Returns [`ServiceError::Io`] if the directory or the key files cannot be
 /// written.
 pub fn setup(keys_dir: &Path, seed: u64) -> Result<SetupOutcome, ServiceError> {
+    setup_impl(keys_dir, run_setup(seed))
+}
+
+/// Trusted setup from OS entropy. This is what a real install must use: a seeded setup is
+/// reproducible by anyone who knows the seed, which hands them the trapdoor.
+pub fn setup_random(keys_dir: &Path) -> Result<SetupOutcome, ServiceError> {
+    setup_impl(keys_dir, run_setup_random())
+}
+
+fn setup_impl(keys_dir: &Path, keys: Result<Keys, ProverError>) -> Result<SetupOutcome, ServiceError> {
     fs::create_dir_all(keys_dir).map_err(|e| ServiceError::io(keys_dir, e))?;
-    let keys = run_setup(seed).map_err(|e| ServiceError::Verification(e.to_string()))?;
+    let keys = keys.map_err(|e| ServiceError::Verification(e.to_string()))?;
 
     let vk = keys
         .verifying_key_bytes()

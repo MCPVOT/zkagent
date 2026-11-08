@@ -52,7 +52,7 @@ integration.
 
 Measured on this tree, not promised (method in [`docs/MEASUREMENTS.md`](docs/MEASUREMENTS.md)):
 **7,442 constraints**, 16 public inputs, `prove` ~437 ms median for one 8-slot batch,
-`verify` ~11 ms stateless, receipt 199 B, proof 128 B compressed. **153 tests** across eight
+`verify` ~11 ms stateless, receipt 199 B, proof 128 B compressed. **156 tests** across eight
 crates, including the six negative controls that must refuse.
 
 ## Quick start
@@ -61,7 +61,9 @@ crates, including the six negative controls that must refuse.
 cargo test                 # unit + end-to-end + negative controls
 
 # 1. circuit-specific trusted setup (development only — see the warning below)
-cargo run -- setup --seed 7 --out keys/
+#    No --seed: the setup is drawn from OS entropy. A seeded setup is reproducible by anyone
+#    who knows the seed, which hands them the trapdoor, so --seed is for tests only.
+cargo run -- setup --out keys/
 
 # 2. a human authorises a policy
 cargo run -- policy \
