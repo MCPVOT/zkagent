@@ -133,7 +133,10 @@ pub fn setup_random(keys_dir: &Path) -> Result<SetupOutcome, ServiceError> {
     setup_impl(keys_dir, run_setup_random())
 }
 
-fn setup_impl(keys_dir: &Path, keys: Result<Keys, ProverError>) -> Result<SetupOutcome, ServiceError> {
+fn setup_impl(
+    keys_dir: &Path,
+    keys: Result<Keys, ProverError>,
+) -> Result<SetupOutcome, ServiceError> {
     fs::create_dir_all(keys_dir).map_err(|e| ServiceError::io(keys_dir, e))?;
     let keys = keys.map_err(|e| ServiceError::Verification(e.to_string()))?;
 

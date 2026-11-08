@@ -209,9 +209,21 @@ mod tests {
 
     fn actions() -> Vec<Action> {
         vec![
-            Action { target: 3, amount: 250, trace_digest: 11 },
-            Action { target: 7, amount: 150, trace_digest: 22 },
-            Action { target: 9, amount: 50, trace_digest: 33 },
+            Action {
+                target: 3,
+                amount: 250,
+                trace_digest: 11,
+            },
+            Action {
+                target: 7,
+                amount: 150,
+                trace_digest: 22,
+            },
+            Action {
+                target: 9,
+                amount: 50,
+                trace_digest: 33,
+            },
         ]
     }
 
@@ -246,7 +258,10 @@ mod tests {
         // membership forgery: it is exactly the case an index range check alone misses.
         disclosure.index = 2;
         let error = check_disclosure(&disclosure, &receipt).expect_err("relabelling must fail");
-        assert!(error.contains("index"), "error must name the index mismatch: {error}");
+        assert!(
+            error.contains("index"),
+            "error must name the index mismatch: {error}"
+        );
     }
 
     #[test]
