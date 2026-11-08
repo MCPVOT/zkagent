@@ -221,5 +221,40 @@ class Ranking(unittest.TestCase):
         self.assertEqual(doc["contributors"], [], "an issue-only contributor is not ranked")
 
 
+class Reviews(unittest.TestCase):
+    """Reviews are the second signal: work the merge count cannot see."""
+
+    def build(self, reviews):
+        prs = [pr(1, "MCPVOT"), pr(2, "grace")]
+        commits = {1: [commit("a")], 2: [commit("b")]}
+        return g.build_leaderboard(
+            "o/r", prs, [], commits, datetime(2026, 10, 2, tzinfo=timezone.utc), no_resolve, reviews
+        )
+
+    def test_a_review_counts_once_per_pr_even_with_several_review_events(self):
+        doc = self.build({1: ["ada", "ada"], 2: ["ada"]})
+        row = next(r for r in doc["contributors"] if r["login"] == "ada")
+        self.assertEqual(row["reviews_given"], 2, "two PRs reviewed, not three review events")
+        self.assertEqual(row["merged_prs"], 0)
+        self.assertEqual(row["contribution_score"], 2)
+
+    def test_a_self_review_is_not_a_review(self):
+        doc = self.build({1: ["MCPVOT"]})
+        row = next(r for r in doc["contributors"] if r["login"] == "MCPVOT")
+        self.assertEqual(row["reviews_given"], 0)
+
+    def test_a_bot_review_is_not_a_review(self):
+        doc = self.build({1: ["github-actions[bot]"]})
+        self.assertNotIn("github-actions[bot]", {r["login"] for r in doc["contributors"]})
+
+    def test_reviewing_outweighs_merging_your_own_work(self):
+        doc = self.build({1: ["ada"], 2: ["ada"]})
+        self.assertEqual(doc["contributors"][0]["login"], "ada", doc["contributors"][:2])
+
+    def test_ranking_names_both_signals(self):
+        doc = self.build({})
+        self.assertIn("reviews_given", doc["ranked_by"], doc["ranked_by"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

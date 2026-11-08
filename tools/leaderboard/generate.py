@@ -82,7 +82,7 @@ NOREPLY = re.compile(r"^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$", re.I)
 
 PACIFIC = None  # set below, after the fallback class
 SINCE_CAPTION = "new since 12:00 AM Pacific (America/Los_Angeles)"
-RANKED_BY = "merged_prs"
+RANKED_BY = "merged_prs + reviews_given"
 
 
 class _UsPacific(tzinfo):
@@ -253,6 +253,7 @@ def build_leaderboard(
     commits_by_pr: dict[int, list[dict]],
     now: datetime,
     resolve: "callable",
+    reviews_by_pr: dict[int, list[str]] | None = None,
 ) -> dict:
     """The leaderboard document, from raw GitHub data."""
     merged = [p for p in prs if p.get("state") == "MERGED"]
@@ -305,6 +306,27 @@ def build_leaderboard(
             people[login]["issues_filed"] += 1
             people[login]["issue_numbers"].append(int(issue["number"]))
 
+    # An approval on your own PR is not a review, and a bot has no judgement to contribute.
+    review_counts: dict[str, int] = {}
+    for number, reviewers in (reviews_by_pr or {}).items():
+        author = (((by_number.get(number) or {}).get("author") or {}).get("login") or "").strip()
+        # Deduplicate here as well as at fetch time: a caller may hand over raw review events,
+        # and one PR reviewed twice is still one PR reviewed.
+        for login in dict.fromkeys(reviewers):
+            if not login or login == author or is_bot(login):
+                continue
+            review_counts[login] = review_counts.get(login, 0) + 1
+    for login, count in review_counts.items():
+        entry = people.get(login)
+        if entry is None:
+            # A reviewer with no merged PR still contributed; the board should show that rather
+            # than credit the work to whoever pressed merge.
+            info = resolve(login, "") or {}   # resolver takes (login, email)
+            entry = {"login": login, "avatar_url": info.get("avatar_url", ""), "merged_prs": 0,
+                     "issues_filed": 0, "dates": [], "pr_numbers": [], "issue_numbers": []}
+            people[login] = entry
+        entry["reviews_given"] = count
+
     rows = []
     for row in people.values():
         dates = sorted(row.pop("dates"))
@@ -318,6 +340,8 @@ def build_leaderboard(
                 "today_prs": today,
                 "today_badge": today_badge(today),
                 "score": row["merged_prs"],
+                "reviews_given": int(row.get("reviews_given", 0)),
+                "contribution_score": row["merged_prs"] + int(row.get("reviews_given", 0)),
                 "first_contribution": dates[0] if dates else "",
                 "last_contribution": dates[-1] if dates else "",
                 "pr_numbers": sorted(row["pr_numbers"]),
@@ -327,7 +351,7 @@ def build_leaderboard(
 
     # Ranked by merged PRs, then by who got there first, then by login.
     rows.sort(
-        key=lambda r: (-r["merged_prs"], r["first_contribution"], r["login"].lower())
+        key=lambda r: (-r["contribution_score"], -r["merged_prs"], r["first_contribution"], r["login"].lower())
     )
     for position, row in enumerate(rows, start=1):
         row["rank"] = position
@@ -356,7 +380,7 @@ def build_leaderboard(
         "contributors": rows,
         "external_contributors": external,
         "ranking_note": (
-            "ranked_by merged PRs. The repository owner is included in `contributors` and excluded "
+            "ranked by merged PRs plus reviews given. The repository owner is included in `contributors` and excluded "
             "from `external_contributors`, because a maintainer merging their own work is not the "
             "same signal as an outside contribution."
         ),
@@ -459,7 +483,22 @@ def load_repo_data(repo: str) -> tuple[list[dict], list[dict], dict[int, list[di
                 )
         commits_by_pr[number] = commits
 
-    return prs, issues, commits_by_pr, total
+    # Reviews are a second contribution signal: someone who reviews other people's work is doing
+    # work the merge count cannot see. One call per merged PR; deduplicated per PR below.
+    reviews_by_pr: dict[int, list[str]] = {}
+    for pr in merged:
+        number = int(pr["number"])
+        raw = run_gh("api", "--paginate", "--slurp", f"repos/{repo}/pulls/{number}/reviews")
+        pages = json.loads(raw)
+        seen: list[str] = []
+        for page in pages if isinstance(pages, list) else [pages]:
+            for review in page or []:
+                login = ((review.get("user") or {}).get("login") or "").strip()
+                if login and login not in seen:
+                    seen.append(login)
+        reviews_by_pr[number] = seen
+
+    return prs, issues, commits_by_pr, reviews_by_pr, total
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -469,9 +508,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     now = datetime.now(timezone.utc)
-    prs, issues, commits_by_pr, total = load_repo_data(args.repo)
+    prs, issues, commits_by_pr, reviews_by_pr, total = load_repo_data(args.repo)
 
-    document = build_leaderboard(args.repo, prs, issues, commits_by_pr, now, make_resolver(args.repo))
+    document = build_leaderboard(
+        args.repo, prs, issues, commits_by_pr, now, make_resolver(args.repo), reviews_by_pr
+    )
     notes = document.pop("_notes", [])
 
     out = Path(args.out)
