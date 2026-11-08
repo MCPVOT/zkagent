@@ -24,6 +24,23 @@ verifier ◀──────────────────────�
    (which actions? not disclosed)
 ```
 
+## The mark
+
+<img src="assets/icon/zkagent-256.png" alt="zkagent" width="96" align="right">
+
+Two block letters on a near-black tile, with a receipt edge underneath: the Z and the K are built
+from the same cells as the wordmark the CLI prints. Shipping at every size an app needs, plus the
+SVG source so a package can pick its own resolution.
+
+```
+assets/icon/zkagent.svg        512x512 source, rounded tile, cyan on #0B0F14
+assets/icon/zkagent-mono.svg   one colour, for bars and light backgrounds
+assets/icon/zkagent-{16..512}.png
+assets/icon/zkagent.ico        16/32/48/64/128/256 for Windows
+```
+
+Use it wherever a program needs to be recognised: a `.desktop` entry, a bar widget, a browser tab.
+
 ## Why this is not another "AI guardrails" wrapper
 
 Guardrails inspect an agent's traffic and trust the inspector. A ZK receipt
