@@ -154,6 +154,21 @@ def run(root: pathlib.Path, quiet: bool = False) -> tuple[int, str]:
         if report.name not in listed:
             errors.append(f"{report.name} exists but is not in the manifest — an unlisted report is unversioned")
 
+    # Verify shipped circuit size matches MEASUREMENTS.md
+    measurements_path = root / DOCS_DIR / "MEASUREMENTS.md"
+    if measurements_path.exists():
+        measurements_text = measurements_path.read_text(encoding="utf-8")
+        meas_match = re.search(r"circuit size\s*\|\s*\*\*(.+?)\*\*", measurements_text)
+        readme_path = root / DOCS_DIR / README
+        if readme_path.exists():
+            readme_text = readme_path.read_text(encoding="utf-8")
+            readme_match = re.search(r"shipped circuit size\s*\|\s*\*\*(.+?)\*\*", readme_text)
+            if readme_match and meas_match:
+                readme_constraints = int(readme_match.group(1).replace(" ", "").replace("\n", ""))
+                meas_constraints = int(meas_match.group(1).replace(" ", "").replace("\n", ""))
+                if readme_constraints != meas_constraints:
+                    errors.append(f"README shipped circuit size ({readme_constraints}) differs from MEASUREMENTS.md ({meas_constraints})")
+
     n = len(documents)
     summary = f"research corpus: {n} document{'s' if n != 1 else ''}, {total_sources} sources"
     out = [summary, *lines]

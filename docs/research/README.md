@@ -30,7 +30,7 @@ The numbers that are easy to confuse:
 
 | Number | Value | Provenance |
 |---|---|---|
-| shipped circuit size | **3 333 constraints, 15 public inputs** | project-measured (`constraint_count_is_sane`) |
+| shipped circuit size | **7 442 constraints, 16 public inputs** | project-measured (`constraint_count_is_sane`) |
 | probe circuit size (doc 05 §4.2) | 2 162 constraints, 9 public inputs | research probe on **0.6.0**, an earlier circuit shape |
 | shipped proof | 128 B | project-measured |
 | shipped verify | ~48–91 ms on a laptop CPU | project-measured |

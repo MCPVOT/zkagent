@@ -1,0 +1,5 @@
+# Contributors to zkagent
+#
+# Generated from git history with the .mailmap applied, so one person appears once:
+#   git log --use-mailmap --format='%aN <%aE>' | sort -u
+MCPVOT <mcpvot@users.noreply.github.com>

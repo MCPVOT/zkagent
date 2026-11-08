@@ -332,6 +332,14 @@ def build_leaderboard(
     for position, row in enumerate(rows, start=1):
         row["rank"] = position
 
+    # The repository owner almost always tops a volume ranking, because merging your own work is
+    # the cheapest way to add a row. Mark them, and publish the same table with their rows removed,
+    # so the board answers "who else contributed" instead of "the owner did everything".
+    owner = repo.split("/")[0].strip().lower()
+    for row in rows:
+        row["maintainer"] = row["login"].lower() == owner
+    external = [row for row in rows if not row["maintainer"]]
+
     total_credited = sum(r["merged_prs"] for r in rows)
     assert total_credited + len(unattributed) == len(merged), "credit accounting does not add up"
 
@@ -346,6 +354,12 @@ def build_leaderboard(
         "merged_pr_total": len(merged),
         "unattributed_prs": sorted(unattributed),
         "contributors": rows,
+        "external_contributors": external,
+        "ranking_note": (
+            "ranked_by merged PRs. The repository owner is included in `contributors` and excluded "
+            "from `external_contributors`, because a maintainer merging their own work is not the "
+            "same signal as an outside contribution."
+        ),
     }
     document["_notes"] = notes
     return document

@@ -42,13 +42,28 @@ deliberately *not* claimed.
 Not yet: an on-chain verifier, a multi-party trusted setup, agent-framework
 integration.
 
+## Use it
+
+| You want | Do |
+|---|---|
+| an agent that produces these receipts | install the Hermes plugin: `hermes plugins install MCPVOT/hermes-zkagent` ([repo](https://github.com/MCPVOT/hermes-zkagent)) |
+| the CLI with no Rust toolchain | take `zkagent-linux-x86_64` (or macos/windows) from [the release](https://github.com/MCPVOT/zkagent/releases), then `sha256sum -c SHA256SUMS` |
+| to build it from source | `cargo test`, then the quick start below |
+
+Measured on this tree, not promised (method in [`docs/MEASUREMENTS.md`](docs/MEASUREMENTS.md)):
+**7,442 constraints**, 16 public inputs, `prove` ~437 ms median for one 8-slot batch,
+`verify` ~11 ms stateless, receipt 199 B, proof 128 B compressed. **156 tests** across eight
+crates, including the six negative controls that must refuse.
+
 ## Quick start
 
 ```bash
 cargo test                 # unit + end-to-end + negative controls
 
 # 1. circuit-specific trusted setup (development only — see the warning below)
-cargo run -- setup --seed 7 --out keys/
+#    No --seed: the setup is drawn from OS entropy. A seeded setup is reproducible by anyone
+#    who knows the seed, which hands them the trapdoor, so --seed is for tests only.
+cargo run -- setup --out keys/
 
 # 2. a human authorises a policy
 cargo run -- policy \

@@ -1117,6 +1117,7 @@ version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
 dependencies = [
+ "libc",
  "rand_chacha",
  "rand_core",
 ]
@@ -1796,7 +1797,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-cli"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "clap",
  "hex",
@@ -1807,7 +1808,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-core"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -1824,7 +1825,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-ipfs"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "cid",
  "serde",
@@ -1837,7 +1838,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-mcp"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1847,7 +1848,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-proofs"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -1870,7 +1871,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-service"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "hex",
  "serde",
@@ -1886,7 +1887,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-verifier"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -1906,7 +1907,7 @@ dependencies = [
 
 [[package]]
 name = "zkagent-wire"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ark-bn254",
  "ark-ec",

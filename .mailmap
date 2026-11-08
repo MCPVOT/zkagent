@@ -1,0 +1,5 @@
+# One person, one identity. GitHub builds noreply addresses as <id>+<login>@users.noreply.github.com,
+# and a renamed git identity leaves both spellings in history. Without this, `git shortlog -sne` shows
+# the same person twice and a leaderboard can credit work to a phantom.
+MCPVOT <mcpvot@users.noreply.github.com> <22164026+MCPVOT@users.noreply.github.com>
+MCPVOT <mcpvot@users.noreply.github.com> VOT <22164026+MCPVOT@users.noreply.github.com>
