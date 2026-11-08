@@ -30,6 +30,9 @@ jobs:
       - name: versions agree
         run: python3 tools/check_version.py
 
+      - name: schemas are current
+        run: python3 tools/gen_schemas.py --check
+
   # Tier 4: an independent implementation must accept our proofs and refuse
   # tampered ones. Ubuntu only, because it needs node (snarkjs) and the property
   # under test is implementation independence, not platform independence.
