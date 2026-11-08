@@ -15,7 +15,6 @@ name: leaderboard
 on:
   # A change to the generator or the attribution rules must be verifiable now, not in four
   # hours: dispatch runs it against the same inputs the schedule uses.
-  workflow_dispatch:
   schedule:
     # Every 4 hours at minute 17, off the top-of-hour rush.
     - cron: "17 */4 * * *"
