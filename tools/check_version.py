@@ -64,11 +64,18 @@ def main() -> int:
         problems.append(f"Cargo.toml says {cargo}, CHANGELOG.md says {cl_version}: add the entry or fix the bump")
 
     tag = newest_tag()
+    pending = False
     if tag is not None:
         tag_version, tag_date = tag
-        if tag_version != cargo:
-            problems.append(f"newest tag is {tag_version}, Cargo.toml is {cargo}: tag the code you shipped")
-        if tag_date != cl_date:
+        def key(v: str) -> tuple[int, ...]:
+            return tuple(int(part) for part in v.split("."))
+        if key(tag_version) > key(cargo):
+            problems.append(f"newest tag is {tag_version}, ahead of Cargo.toml {cargo}: a tag must not lead the code")
+        elif tag_version != cargo:
+            # A version ahead of the newest tag is a release in progress: the tag is created after
+            # the merge, so this state has to be allowed or the release can never be made.
+            pending = True
+        elif tag_date != cl_date:
             problems.append(f"newest tag date is {tag_date}, changelog entry date is {cl_date}")
 
     if problems:
@@ -78,7 +85,8 @@ def main() -> int:
         return 1
 
     where = f", newest tag {tag[0]}+{tag[1]}" if tag else ", no tags yet"
-    print(f"version consistency: OK ({cargo}+{cl_date}{where})")
+    state = f", {cargo} pending release (tag it after the merge)" if pending else ""
+    print(f"version consistency: OK ({cargo}+{cl_date}{where}{state})")
     return 0
 
 

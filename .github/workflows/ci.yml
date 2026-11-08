@@ -14,6 +14,22 @@ env:
   RAYON_NUM_THREADS: 2
 
 jobs:
+  version:
+    name: version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # the tag check needs history and tags
+          fetch-tags: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Fails when Cargo.toml, the newest changelog entry and the newest tag disagree, or when the
+      # tag points at a commit this branch does not contain (a squash merge hides that otherwise).
+      - name: versions agree
+        run: python3 tools/check_version.py
+
   # Tier 4: an independent implementation must accept our proofs and refuse
   # tampered ones. Ubuntu only, because it needs node (snarkjs) and the property
   # under test is implementation independence, not platform independence.
