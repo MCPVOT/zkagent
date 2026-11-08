@@ -11,11 +11,11 @@ keywords = ["zero-knowledge", "attestation", "groth16", "agent", "embedding"]
 categories = ["cryptography", "authentication"]
 
 [dependencies]
-zkagent-core = { path = "../zkagent-core", version = "0.4.0" }
-zkagent-wire = { path = "../zkagent-wire", version = "0.4.0" }
-zkagent-proofs = { path = "../zkagent-proofs", version = "0.4.0" }
-zkagent-verifier = { path = "../zkagent-verifier", version = "0.4.0" }
-zkagent-ipfs = { path = "../zkagent-ipfs", version = "0.4.0" }
+zkagent-core = { path = "../zkagent-core", version = "0.4.1" }
+zkagent-wire = { path = "../zkagent-wire", version = "0.4.1" }
+zkagent-proofs = { path = "../zkagent-proofs", version = "0.4.1" }
+zkagent-verifier = { path = "../zkagent-verifier", version = "0.4.1" }
+zkagent-ipfs = { path = "../zkagent-ipfs", version = "0.4.1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex = "0.4"
