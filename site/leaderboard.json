@@ -1,24 +1,26 @@
 {
   "repo": "MCPVOT/zkagent",
-  "generated_at": "2026-11-08T02:14:07Z",
-  "generated_pacific": "Nov 07, 2026 06:14 PM PST",
+  "generated_at": "2026-11-08T03:23:54Z",
+  "generated_pacific": "Nov 07, 2026 07:23 PM PST",
   "since": "2026-11-07T08:00:00Z",
   "since_caption": "new since 12:00 AM Pacific (America/Los_Angeles)",
-  "today_total": 1,
-  "ranked_by": "merged_prs",
-  "merged_pr_total": 20,
+  "today_total": 5,
+  "ranked_by": "merged_prs + reviews_given",
+  "merged_pr_total": 24,
   "unattributed_prs": [],
   "contributors": [
     {
       "login": "MCPVOT",
       "avatar_url": "https://github.com/MCPVOT.png?size=200",
-      "merged_prs": 20,
+      "merged_prs": 24,
       "issues_filed": 3,
-      "today_prs": 1,
-      "today_badge": "<span class=\"delta delta-up\" title=\"+1 new since 12:00 AM Pacific (America/Los_Angeles)\"><svg viewBox=\"0 0 10 9\" width=\"14\" height=\"12\" aria-label=\"up\"><polygon points=\"5,0 10,9 0,9\"/></svg>+1</span>",
-      "score": 20,
+      "today_prs": 5,
+      "today_badge": "<span class=\"delta delta-up\" title=\"+5 new since 12:00 AM Pacific (America/Los_Angeles)\"><svg viewBox=\"0 0 10 9\" width=\"14\" height=\"12\" aria-label=\"up\"><polygon points=\"5,0 10,9 0,9\"/></svg>+5</span>",
+      "score": 24,
+      "reviews_given": 0,
+      "contribution_score": 24,
       "first_contribution": "2026-10-29T13:57:17Z",
-      "last_contribution": "2026-11-08T02:11:11Z",
+      "last_contribution": "2026-11-08T03:23:44Z",
       "pr_numbers": [
         1,
         2,
@@ -39,7 +41,11 @@
         20,
         21,
         22,
-        23
+        23,
+        24,
+        25,
+        26,
+        27
       ],
       "issue_numbers": [
         12,
@@ -51,5 +57,5 @@
     }
   ],
   "external_contributors": [],
-  "ranking_note": "ranked_by merged PRs. The repository owner is included in `contributors` and excluded from `external_contributors`, because a maintainer merging their own work is not the same signal as an outside contribution."
+  "ranking_note": "ranked by merged PRs plus reviews given. The repository owner is included in `contributors` and excluded from `external_contributors`, because a maintainer merging their own work is not the same signal as an outside contribution."
 }
