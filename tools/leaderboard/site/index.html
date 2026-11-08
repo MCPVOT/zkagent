@@ -140,8 +140,8 @@ function row(c, i) {
       <div class="who"><a href="${gh(c.login)}" rel="noopener">${esc(c.login)}</a></div>
       <div class="when">${fmt(c.first_contribution)} – ${fmt(c.last_contribution)}</div>
     </div>
-    <div class="gauge"><i style="width:${Math.round(100 * Math.max(0, Math.trunc(Number(c.merged_prs) || 0)) / MAX)}%"></i></div>
-    <div class="cnt">${Math.max(0, Math.trunc(Number(c.merged_prs) || 0))}${badge(c.today_prs)}<small>Merged</small></div>
+    <div class="gauge"><i style="width:${Math.round(100 * Math.max(0, Math.trunc(Number(c.contribution_score ?? c.merged_prs) || 0)) / MAX)}%"></i></div>
+    <div class="cnt">${Math.max(0, Math.trunc(Number(c.merged_prs) || 0))}${badge(c.today_prs)}<small>Merged</small>${Number(c.reviews_given) > 0 ? `<small>· ${Math.trunc(Number(c.reviews_given))} reviewed</small>` : ""}</div>
   </div>`;
 }
 
@@ -160,7 +160,7 @@ let MAX = 1;
   }
 
   const list = (d.contributors || []).slice().sort((a, b) => a.rank - b.rank);
-  MAX = Math.max(1, ...list.map((c) => c.merged_prs || 0));
+  MAX = Math.max(1, ...list.map((c) => Number(c.contribution_score ?? c.merged_prs) || 0));
 
   $("total").textContent = d.merged_pr_total ?? list.reduce((n, c) => n + (c.merged_prs || 0), 0);
   $("today").textContent = d.today_total || 0;
