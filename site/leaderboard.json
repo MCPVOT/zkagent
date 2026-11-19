@@ -1,8 +1,8 @@
 {
   "repo": "MCPVOT/zkagent",
-  "generated_at": "2026-11-19T01:52:51Z",
-  "generated_pacific": "Nov 18, 2026 05:52 PM PST",
-  "since": "2026-11-18T08:00:00Z",
+  "generated_at": "2026-11-19T13:11:01Z",
+  "generated_pacific": "Nov 19, 2026 05:11 AM PST",
+  "since": "2026-11-19T08:00:00Z",
   "since_caption": "new since 12:00 AM Pacific (America/Los_Angeles)",
   "today_total": 0,
   "ranked_by": "merged_prs + reviews_given",
